@@ -30,6 +30,13 @@ def test_static_app_class_exists():
     assert StaticAnalysisApp.__name__ == "StaticAnalysisApp"
 
 
+def test_text_loader_imports_successfully():
+    from text_loader import load_text_model, parse_text_model
+
+    assert callable(load_text_model)
+    assert callable(parse_text_model)
+
+
 def test_launcher_import_does_not_start_mainloop():
     launcher_path = ROOT / "scripts" / "run_static_gui.py"
     spec = importlib.util.spec_from_file_location("run_static_gui_import_test", launcher_path)
