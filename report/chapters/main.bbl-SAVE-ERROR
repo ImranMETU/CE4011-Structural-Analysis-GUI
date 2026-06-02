@@ -1,0 +1,145 @@
+% $ biblatex auxiliary file $
+% $ biblatex bbl format version 3.3 $
+% Do not modify the above lines!
+%
+% This is an auxiliary file used by the 'biblatex' package.
+% This file may safely be deleted. It will be recreated by
+% biber as required.
+%
+\begingroup
+\makeatletter
+\@ifundefined{ver@biblatex.sty}
+  {\@latex@error
+     {Missing 'biblatex' package}
+     {The bibliography requires the 'biblatex' package.}
+      \aftergroup\endinput}
+  {}
+\endgroup
+
+
+\refsection{0}
+  \datalist[entry]{none/global//global/global/global}
+    \entry{kurc2026}{misc}{}{}
+      \name{author}{1}{}{%
+        {{hash=ea16f6b9467ccc6fc49ad0fcb947b2ae}{%
+           family={Kurç},
+           familyi={K\bibinitperiod},
+           given={{"O}},
+           giveni={"\bibinitperiod}}}%
+      }
+      \strng{namehash}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \strng{fullhash}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \strng{fullhashraw}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \strng{bibnamehash}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \strng{authorbibnamehash}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \strng{authornamehash}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \strng{authorfullhash}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \strng{authorfullhashraw}{ea16f6b9467ccc6fc49ad0fcb947b2ae}
+      \field{sortinit}{2}
+      \field{sortinithash}{8b555b3791beccb63322c22f3320aa9a}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{note}{Lecture notes and video series, Middle East Technical University, Ankara}
+      \field{title}{CE 4011/483: Special Topics in Civil Engineering: Structural Analysis Software Development}
+      \field{year}{2026}
+      \true{nocite}
+    \endentry
+    \entry{ftool2026}{software}{}{}
+      \name{author}{1}{}{%
+        {{hash=13fd8ba3bce2e3e689425e4a80f52c6d}{%
+           family={Lopes},
+           familyi={L\bibinitperiod},
+           given={L.\bibnamedelimi C.\bibnamedelimi S.},
+           giveni={L\bibinitperiod\bibinitdelim C\bibinitperiod\bibinitdelim S\bibinitperiod}}}%
+      }
+      \list{organization}{1}{%
+        {Pontifical Catholic University of Rio de Janeiro (PUC-Rio)}%
+      }
+      \strng{namehash}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \strng{fullhash}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \strng{fullhashraw}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \strng{bibnamehash}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \strng{authorbibnamehash}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \strng{authornamehash}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \strng{authorfullhash}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \strng{authorfullhashraw}{13fd8ba3bce2e3e689425e4a80f52c6d}
+      \field{sortinit}{3}
+      \field{sortinithash}{ad6fe7482ffbd7b9f99c9e8b5dccd3d7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{title}{FTOOL: Two-Dimensional Frame Analysis Tool}
+      \field{version}{4.00}
+      \field{year}{2026}
+      \true{nocite}
+      \verb{urlraw}
+      \verb https://www.ftool.com.br
+      \endverb
+      \verb{url}
+      \verb https://www.ftool.com.br
+      \endverb
+    \endentry
+    \entry{ai_disclosure}{misc}{}{}
+      \name{author}{3}{}{%
+        {{hash=f431db65cea024a5f19eab835afefee2}{%
+           family={{Anthropic}},
+           familyi={A\bibinitperiod}}}%
+        {{hash=0523b13262b12c215d8009938f5c14f1}{%
+           family={{OpenAI}},
+           familyi={O\bibinitperiod}}}%
+        {{hash=8b36e9207c24c76e6719268e49201d94}{%
+           family={{Google}},
+           familyi={G\bibinitperiod}}}%
+      }
+      \strng{namehash}{26f91d22e0b20e676ce6dc258d119f0c}
+      \strng{fullhash}{1f936950ab8f0c901c007f963a7a9ad3}
+      \strng{fullhashraw}{1f936950ab8f0c901c007f963a7a9ad3}
+      \strng{bibnamehash}{1f936950ab8f0c901c007f963a7a9ad3}
+      \strng{authorbibnamehash}{1f936950ab8f0c901c007f963a7a9ad3}
+      \strng{authornamehash}{26f91d22e0b20e676ce6dc258d119f0c}
+      \strng{authorfullhash}{1f936950ab8f0c901c007f963a7a9ad3}
+      \strng{authorfullhashraw}{1f936950ab8f0c901c007f963a7a9ad3}
+      \field{sortinit}{4}
+      \field{sortinithash}{9381316451d1b9788675a07e972a12a7}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{note}{Large language models used as pair-programming assistants for logic refinement, XML parsing structures, and unit test generation}
+      \field{title}{Claude 3.5 Sonnet, ChatGPT-4o, and Gemini 1.5 Pro}
+      \field{year}{2026}
+      \true{nocite}
+    \endentry
+    \entry{pytest}{online}{}{}
+      \true{moreauthor}
+      \true{morelabelname}
+      \name{author}{1}{}{%
+        {{hash=34a528066a0b9b6c4981299e6f540bec}{%
+           family={Krekel},
+           familyi={K\bibinitperiod},
+           given={Holger},
+           giveni={H\bibinitperiod}}}%
+      }
+      \strng{namehash}{543f8ce6788df88b05004ede23fa8615}
+      \strng{fullhash}{543f8ce6788df88b05004ede23fa8615}
+      \strng{fullhashraw}{543f8ce6788df88b05004ede23fa8615}
+      \strng{bibnamehash}{543f8ce6788df88b05004ede23fa8615}
+      \strng{authorbibnamehash}{543f8ce6788df88b05004ede23fa8615}
+      \strng{authornamehash}{543f8ce6788df88b05004ede23fa8615}
+      \strng{authorfullhash}{543f8ce6788df88b05004ede23fa8615}
+      \strng{authorfullhashraw}{543f8ce6788df88b05004ede23fa8615}
+      \field{sortinit}{5}
+      \field{sortinithash}{20e9b4b0b173788c5dace24730f47d8c}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{title}{pytest: framework for easily writing small tests, as well as scaling to complex functional testing}
+      \field{year}{2026}
+      \true{nocite}
+      \verb{urlraw}
+      \verb https://docs.pytest.org
+      \endverb
+      \verb{url}
+      \verb https://docs.pytest.org
+      \endverb
+    \endentry
+  \enddatalist
+\endrefsection
+\endinput
+

@@ -1,0 +1,601 @@
+\chapter{Testing and Verification}
+
+\section{Testing Framework}
+
+The tests discussed in this chapter are listed below in order:
+\begin{enumerate}
+    \item UT-T1: Fixed-Fixed Truss under Uniform Temperature
+    \item UT-T2: Fixed-Fixed Frame under Pure Thermal Gradient
+    \item UT-S1: Single-Member Settlement Response
+    \item UT-S2: Zero Settlement Equals No Settlement
+    \item IT-T1: Frame with One Thermal Member
+    \item IT-T2: Mixed Frame-Truss System with Thermal Loading
+    \item IT-S1: Frame with One Prescribed Support Displacement
+    \item IT-S2: Multi-Member System with Settlement
+    \item Regression Tests (External Verification)
+\end{enumerate}
+
+\section{Unit Tests}
+
+\subsection{UT-T1: Fixed-Fixed Truss under Uniform Temperature}
+
+\textbf{Theory:}  
+A uniform temperature change in a constrained axial member induces a pure axial force due to prevented thermal expansion. The thermal strain is:
+\[
+\varepsilon_T = \alpha \Delta T
+\]
+For a fully restrained member:
+\[
+\varepsilon_{\text{total}} = 0 \Rightarrow \varepsilon_{\text{mech}} = -\alpha \Delta T
+\]
+Thus, the induced axial force is:
+\[
+N_t = EA\alpha \Delta T
+\]
+No shear or moment is generated.
+
+\textbf{Implementation:}  
+The thermal effect is introduced as an equivalent fixed-end force vector:
+\[
+f_{th}^{local} = [-N_t,\ 0,\ 0,\ +N_t,\ 0,\ 0]
+\]
+Since all DOFs are restrained, displacements are zero and reactions directly recover the thermal force.
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Correct axial force magnitude and sign
+    \item No artificial shear or moment
+    \item Proper handling of fully restrained systems
+\end{itemize}
+
+\subsection{UT-T2: Fixed-Fixed Frame under Pure Thermal Gradient}
+
+\textbf{Theory:}  
+A temperature gradient across the depth produces curvature:
+\[
+\kappa = \frac{\alpha \Delta T}{d}
+\]
+The resulting thermal moment is:
+\[
+M_t = EI\kappa = \frac{EI\alpha \Delta T}{d}
+\]
+For zero mean temperature:
+\[
+N_t = 0
+\]
+Thus, the response consists of equal and opposite end moments.
+
+\textbf{Implementation:}  
+The equivalent fixed-end vector is:
+\[
+f_{th}^{local} = [0,\ 0,\ -M_t,\ 0,\ 0,\ +M_t]
+\]
+The structure is fully restrained, so reactions directly represent thermal moments.
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Correct conversion of gradient to bending moment
+    \item Zero axial force for zero mean temperature
+    \item Correct rotational DOF response
+\end{itemize}
+
+\subsection{UT-S1: Single-Member Settlement Response}
+
+\textbf{Theory:}  
+Support settlement introduces prescribed displacement:
+\[
+u_r \neq 0
+\]
+The reduced system becomes:
+\[
+K_{ff} u_f = F_f - K_{fr} u_r
+\]
+For a fixed-fixed beam:
+\[
+M = \frac{6EI\delta}{L^2}, \quad V = \frac{12EI\delta}{L^3}
+\]
+
+\textbf{Implementation:}  
+The settlement is imposed at a restrained DOF. The equivalent force contribution is:
+\[
+F_{\text{equiv}} = -K_{fr} u_r
+\]
+The reduced system is solved and reactions are recovered using:
+\[
+R = K_{rf} u_f + K_{rr} u_r
+\]
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Correct modification of RHS vector
+    \item Accurate recovery of reactions
+    \item Agreement with closed-form beam solution
+\end{itemize}
+
+\subsection{UT-S2: Zero Settlement Equals No Settlement}
+
+\textbf{Theory:}  
+When:
+\[
+u_r = 0
+\]
+the governing equation reduces to:
+\[
+K_{ff} u_f = F_f
+\]
+which must reproduce the original solution.
+
+\textbf{Implementation:}  
+The solver is executed with settlement logic enabled but with all prescribed displacements set to zero.
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Backward compatibility with Assignment 3
+    \item No unintended numerical artifacts
+\end{itemize}
+
+\section{Interface and Integration Tests}
+
+\subsection{IT-T1: Frame with One Thermal Member}
+
+\textbf{Theory:}  
+In a partially restrained structure, thermal expansion induces both displacements and internal forces governed by:
+\[
+K u = F_{th}
+\]
+
+\textbf{Implementation:}  
+A small frame is analyzed with one thermally loaded element. Thermal effects are converted to equivalent nodal loads and assembled into the global force vector. The full system is solved for displacements.
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Proper assembly of thermal load into global system
+    \item Compatibility-driven force redistribution
+    \item Correct displacement response
+\end{itemize}
+
+\subsection{IT-T2: Mixed Frame-Truss System with Thermal Loading}
+
+\textbf{Theory:}  
+Different element types respond differently:
+\begin{itemize}
+    \item Frame elements: axial + bending
+    \item Truss elements: axial only
+\end{itemize}
+System equilibrium requires compatibility across all elements.
+
+\textbf{Implementation:}  
+Thermal loads are applied as:
+\begin{itemize}
+    \item Gradient + mean for frame elements
+    \item Uniform temperature for truss elements
+\end{itemize}
+The system is assembled and solved, and internal forces are recovered using:
+\[
+q = k_{local} u_{local} - f_{thermal}
+\]
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Correct element-specific behavior
+    \item No bending in truss elements
+    \item Proper multi-element interaction
+\end{itemize}
+
+\subsection{IT-S1: Frame with One Prescribed Support Displacement}
+
+\textbf{Theory:}  
+Settlement introduces compatibility-driven deformation governed by:
+\[
+K_{ff} u_f = F_f - K_{fr} u_r
+\]
+
+\textbf{Implementation:}  
+A single support displacement is applied in a small frame. The global system is assembled with modified RHS and solved for unknown displacements.
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Correct propagation of settlement through structure
+    \item Accurate internal force redistribution
+\end{itemize}
+
+\subsection{IT-S2: Multi-Member System with Settlement}
+
+\textbf{Theory:}  
+In mixed systems:
+\begin{itemize}
+    \item Frame members resist bending and axial forces
+    \item Truss members resist axial forces only
+\end{itemize}
+Settlement effects propagate through compatibility across all elements.
+
+\textbf{Implementation:}  
+A multi-member system (frame + truss) is analyzed with prescribed displacement at one node. The full system is solved and member forces are recovered.
+
+\textbf{Validation Objective:}
+\begin{itemize}
+    \item Correct coupling between element types
+    \item Stable solver behavior under imposed displacement
+    \item Physically consistent redistribution
+\end{itemize}
+
+\section{Thermal Cases}
+
+\subsection{Unit Tests}
+
+\begin{table}[H]
+\centering
+\caption{UT-T1: Uniform Thermal Truss}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Expected & Error (\%) \\
+\midrule
+Axial Force $N$ & $72{,}000$ N & $72{,}000$ N & 0.00 \\
+Shear $V$ & 0 & 0 & 0.00 \\
+Moment $M$ & 0 & 0 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Exact agreement confirms correct implementation of uniform thermal axial effects.
+
+\vspace{0.4cm}
+
+\begin{table}[H]
+\centering
+\caption{UT-T2: Thermal Gradient Frame}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Expected & Error (\%) \\
+\midrule
+Axial Force $N$ & 0 & 0 & 0.00 \\
+Moment $M$ & $5{,}760$ N·m & $5{,}760$ N·m & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Pure bending response validates correct gradient-to-curvature formulation.
+
+\subsection{Interface Tests}
+
+\begin{table}[H]
+\centering
+\caption{IT-T1: Frame with One Thermal Member}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Expected & Error (\%) \\
+\midrule
+Mid-node displacement & $7.2 \times 10^{-4}$ m & $7.2 \times 10^{-4}$ m & 0.00 \\
+Support reaction $R_x$ & $\pm 3.6 \times 10^{5}$ N & $\pm 3.6 \times 10^{5}$ N & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Confirms correct thermal load propagation and compatibility-driven response.
+
+\vspace{0.4cm}
+
+\begin{table}[H]
+\centering
+\caption{IT-T2: Mixed Frame-Truss Thermal System}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Expected & Error (\%) \\
+\midrule
+Displacement & $4.145 \times 10^{-4}$ m & $4.145 \times 10^{-4}$ m & 0.00 \\
+Support reaction $R_x$ & $\pm 9.273 \times 10^{4}$ N & $\pm 9.273 \times 10^{4}$ N & 0.00 \\
+Truss shear/moment & 0 & 0 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Validates correct interaction between frame (bending + axial) and truss (axial-only) elements.
+
+\section{Settlement Cases}
+
+\subsection{Unit Tests}
+
+\begin{table}[H]
+\centering
+\caption{UT-S1: Single-Member Settlement}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Expected & Error (\%) \\
+\midrule
+Shear $V$ & $\pm 6{,}000$ N & $\pm 6{,}000$ N & 0.00 \\
+Moment $M$ & $-12{,}000$ N·m & $-12{,}000$ N·m & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Results match closed-form beam solution for imposed settlement.
+
+\vspace{0.4cm}
+
+\begin{table}[H]
+\centering
+\caption{UT-S2: Zero Settlement Consistency}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Baseline & Status \\
+\midrule
+Displacements & Match & Match & Pass \\
+Reactions & Match & Match & Pass \\
+Member Forces & Match & Match & Pass \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Confirms backward compatibility with Assignment 3 solver.
+
+\subsection{Interface Tests}
+
+\begin{table}[H]
+\centering
+\caption{IT-S1: Frame Settlement}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Expected & Error (\%) \\
+\midrule
+Displacement & $-1.0 \times 10^{-3}$ m & $-1.0 \times 10^{-3}$ m & 0.00 \\
+Rotation & $3.75 \times 10^{-4}$ rad & $3.75 \times 10^{-4}$ rad & 0.00 \\
+Reaction $R_y$ & $\pm 750$ N & $\pm 750$ N & 0.00 \\
+Moment $M$ & $-3{,}000$ N·m & $-3{,}000$ N·m & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Settlement effects correctly propagated through the frame with proper moment redistribution.
+
+\vspace{0.4cm}
+
+\begin{table}[H]
+\centering
+\caption{IT-S2: Mixed System Settlement}
+\begin{tabular}{llll}
+\toprule
+Quantity & Solver & Expected & Error (\%) \\
+\midrule
+Displacement & $-9.091 \times 10^{-4}$ m & $-9.091 \times 10^{-4}$ m & 0.00 \\
+Reaction $R_x$ & $\pm 4.545 \times 10^{4}$ N & $\pm 4.545 \times 10^{4}$ N & 0.00 \\
+Truss shear/moment & 0 & 0 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:} Confirms correct coupling and load redistribution in mixed frame-truss systems under settlement.
+
+\section{Summary Table of Verification Results}
+
+\begin{table}[H]
+    \centering
+    \caption{Consolidated Verification Summary}
+    \label{tab:verification_summary}
+    \begin{tabular}{lllll}
+        \toprule
+        Test ID & Type & Feature & Status & Remarks \\
+        \midrule
+        UT-T1 & Unit & Thermal (uniform) & Pass & Exact analytical match ($<10^{-8}$) \\
+        UT-T2 & Unit & Thermal (gradient) & Pass & Moment formulation validated \\
+        UT-S1 & Unit & Settlement (beam) & Pass & Closed-form solution reproduced \\
+        UT-S2 & Unit & Settlement (baseline) & Pass & No-degradation confirmed \\
+        IT-T1 & Integration & Thermal pipeline & Pass & Load propagation verified \\
+        IT-T2 & Integration & Mixed thermal system & Pass & Frame-truss interaction correct \\
+        IT-S1 & Integration & Settlement (frame) & Pass & Compatibility redistribution verified \\
+        IT-S2 & Integration & Mixed system & Pass & Coupled system behavior correct \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{test_results_screenshot.png}
+    \caption{Pytest console output for the 8 mandatory unit and interface tests}
+    \label{fig:test_results_screenshot}
+\end{figure}
+
+\noindent
+\textbf{Summary:}  
+All unit and integration tests satisfy the prescribed numerical tolerances (relative $10^{-6}$, absolute $10^{-8}$). The results confirm correct implementation of thermal loading (uniform, gradient, and combined effects) and support settlement (prescribed displacement) within both isolated elements and multi-member systems.
+
+\section{Regression Tests (External Verification)}
+
+While unit and integration tests validate internal correctness of the implementation, additional regression tests were performed to verify the solver against an independent reference tool (FTool). This step ensures that the implemented formulations produce physically consistent and externally validated results.
+
+The regression tests focus on:
+\begin{itemize}
+    \item Thermal loading effects (uniform and gradient)
+    \item Combined thermo-mechanical response
+    \item Prescribed displacement (support settlement)
+\end{itemize}
+
+All cases are solved using both the developed solver and FTool. Results are compared using standard tolerances (relative $10^{-6}$, absolute $10^{-8}$).
+
+\subsection{Test R1: Uniform Thermal Truss}
+
+\textbf{Description:}  
+Single truss element subjected to uniform temperature increase.
+
+\textbf{Setup:}
+\begin{itemize}
+    \item Length: $L = 4$ m
+    \item Material: $E = 200$ GPa, $\alpha = 1.2 \times 10^{-5}$ /$^\circ$C
+    \item Cross-section: $A = 9.11 \times 10^{-5}$ m$^2$
+    \item Boundary: Both ends fixed
+    \item Load: $\Delta T = 30^\circ C$
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{Regression_Thermal_Uniform.png}
+\caption{Regression Test R1 model in FTool: uniform thermal truss case}
+\label{fig:reg_r1_uniform}
+\end{figure}
+
+\textbf{Analytical Expectation:}
+\[
+N = EA\alpha \Delta T
+\]
+
+\begin{table}[H]
+\centering
+\caption{Regression Test R1: Uniform Thermal Truss}
+\begin{tabular}{lccc}
+\toprule
+Quantity & FTool & Solver & Status \\
+\midrule
+Axial Force $N$ & $6.56 \times 10^3$ N & $6.56 \times 10^3$ N & Match \\
+Shear $V$ & 0 & 0 & Pass \\
+Moment $M$ & 0 & 0 & Pass \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:}  
+The magnitude differs from the analytical reference due to section property scaling in the FTool model. However, agreement between both numerical solutions confirms correct implementation of thermal axial effects.
+
+\vspace{0.5cm}
+
+\subsection{Test R2: Pure Thermal Gradient Frame}
+
+\textbf{Description:}  
+Frame element subjected to a linear temperature gradient with zero mean.
+
+\textbf{Setup:}
+\begin{itemize}
+    \item $T_{\text{top}} = -10^\circ C$, $T_{\text{bottom}} = +10^\circ C$
+    \item Material: $E = 30$ GPa, $\alpha = 8 \times 10^{-6}$ /$^\circ$C
+    \item Cross-section: $A = 0.32$ m$^2$, $I = 0.01707$ m$^4$, $d = 0.4$ m
+    \item Fully fixed supports
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{Regression_Thermal_Gradient.png}
+\caption{Regression Test R2 model in FTool: pure thermal gradient frame case}
+\label{fig:reg_r2_gradient}
+\end{figure}
+
+\textbf{Expected Behavior:}
+Pure bending response with zero axial force.
+
+\begin{table}[H]
+\centering
+\caption{Regression Test R2: Thermal Gradient Frame}
+\begin{tabular}{lccc}
+\toprule
+Quantity & FTool & Solver & Status \\
+\midrule
+Axial Force $N$ & 0 & 0 & Pass \\
+Moment $M$ & $1.024 \times 10^5$ N·m & $1.024 \times 10^5$ N·m & Match \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Remark:}  
+The absence of axial force confirms correct decomposition of thermal loading into mean and gradient components. The moment agreement validates the bending formulation.
+
+\vspace{0.5cm}
+
+\subsection{Test R3: Combined Thermal Frame}
+
+\textbf{Description:}  
+Frame element subjected to both uniform temperature and gradient.
+
+\textbf{Setup:}
+\begin{itemize}
+    \item $T_{\text{top}} = 10^\circ C$, $T_{\text{bottom}} = 20^\circ C$
+    \item Material: $E = 30$ GPa, $\alpha = 8 \times 10^{-6}$ /$^\circ$C
+    \item Cross-section: $A = 0.25$ m$^2$, $I = 0.00521$ m$^4$, $d = 0.3$ m
+    \item Fully fixed supports
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{Regression_Thermal_Combined.png}
+\caption{Regression Test R3 model in FTool: combined thermal frame case}
+\label{fig:reg_r3_combined}
+\end{figure}
+
+\textbf{Expected Behavior:}
+\begin{itemize}
+    \item Axial compression due to mean temperature
+    \item Bending moment due to gradient
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Regression Test R3: Combined Thermal Frame}
+\begin{tabular}{lccc}
+\toprule
+Quantity & FTool & Solver & Status \\
+\midrule
+Axial Force $N$ & $1.152 \times 10^6$ N & $1.152 \times 10^6$ N & Match \\
+Moment $M$ & $5.12 \times 10^4$ N·m & $5.12 \times 10^4$ N·m & Match \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Conclusion:}  
+The results confirm correct superposition of axial and bending thermal effects.
+
+\vspace{0.5cm}
+
+\subsection{Test R4: Frame Settlement}
+
+\textbf{Description:}  
+Frame element subjected to support settlement.
+
+\textbf{Setup:}
+\begin{itemize}
+    \item Node 1: Fixed (all DOF restrained)
+    \item Node 2: Roller (vertical restraint only; $u_x$ and $r_z$ free)
+    \item Settlement: $u_y = -10$ mm at Node 2
+    \item Material: $E = 30$ GPa
+    \item Cross-section: $A = 0.25$ m$^2$, $I = 0.00521$ m$^4$
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{Regression_Settlement.png}
+\caption{Regression Test R4 model in FTool: settlement frame case}
+\label{fig:reg_r4_settlement}
+\end{figure}
+
+\textbf{Expected Behavior:}
+\begin{itemize}
+    \item Induced shear and bending due to compatibility
+    \item Zero moment at released node (roller constraint)
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\caption{Regression Test R4: Settlement Frame}
+\begin{tabular}{lccc}
+\toprule
+Quantity & FTool & Solver & Status \\
+\midrule
+Shear $V$ & $7.32 \times 10^4$ N & $7.32 \times 10^4$ N & Match \\
+Moment (Node 1, fixed) & $2.93 \times 10^5$ N·m & $2.93 \times 10^5$ N·m & Match \\
+Moment (Node 2, roller) & $0$ & $0$ & Pass \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Conclusion:}  
+The results validate the implementation of prescribed displacements using the partitioned stiffness formulation, and confirm correct treatment of boundary conditions.
+
+\vspace{0.5cm}
+
+\subsection{Regression Tests Summary}
+
+All regression tests show strong agreement between the developed solver and FTool results. Minor discrepancies with analytical textbook values arise from differences in section properties and modeling assumptions, not from algorithmic errors.
+
+These tests confirm:
+\begin{itemize}
+    \item Correct implementation of thermal load vectors for both uniform and gradient components
+    \item Proper decomposition of thermal loading into axial and bending effects
+    \item Accurate handling of support settlements via prescribed displacements
+    \item Consistency with external structural analysis software (FTool)
+    \item Correct treatment of boundary conditions and internal constraint formulation
+\end{itemize}

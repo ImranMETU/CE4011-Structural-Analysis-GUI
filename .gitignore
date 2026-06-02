@@ -1,0 +1,22 @@
+*.aux
+*.bbl
+*.bcf
+*.fls
+*.fdb_latexmk
+*.lof
+*.lot
+*.out
+*.run
+*.toc
+*.synctex.gz
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env/
+*.egg-info/
+
+# generated outputs
+results/**/*.txt
+results/**/*.csv
+results/**/*.png

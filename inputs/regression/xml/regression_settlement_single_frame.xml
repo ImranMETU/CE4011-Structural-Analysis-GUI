@@ -1,0 +1,26 @@
+<structure>
+  <nodes>
+    <node id="1" x="0.0" y="0.0">
+      <restraints ux="true" uy="true" rz="true"/>
+    </node>
+    <node id="2" x="4.0" y="0.0">
+      <restraints ux="false" uy="true" rz="false"/>
+    </node>
+  </nodes>
+
+  <materials>
+    <material id="concrete_50x50" E="3.0e10" alpha="8.0e-6"/>
+  </materials>
+
+  <sections>
+    <section id="square_50" A="0.25" I="0.00520833" d="0.5"/>
+  </sections>
+
+  <elements>
+    <element id="1" type="frame" node_i="1" node_j="2" material="concrete_50x50" section="square_50"/>
+  </elements>
+
+  <nodal_loads>
+    <settlement node_id="2" uy="-0.01"/>
+  </nodal_loads>
+</structure>

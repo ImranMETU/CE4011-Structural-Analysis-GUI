@@ -1,0 +1,144 @@
+% ============================================================
+% CE4011 Assignment 4 Report (LaTeX Skeleton)
+% Suggested project layout:
+% .
+% |-- main.tex
+% |-- Chapter1_Assignment4_ProgramDesign.tex
+% |-- Chapter2_Assignment4_TestingVerification.tex
+% |-- Chapter3_Assignment4_StructuralAnalysisCases.tex
+% |-- Chapter4_Assignment4_Conclusion.tex
+% |-- Chapter5_Assignment4_References.tex
+% |-- bibliography.bib
+% |-- images/
+% |-- tables/
+% |-- appendices/   % Optional for future code appendix
+% ============================================================
+
+\documentclass[12pt,a4paper]{report}
+
+% ------------------------------
+% Core packages
+% ------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+
+% ------------------------------
+% Math and symbols
+% ------------------------------
+\usepackage{amsmath,amssymb,mathtools}
+
+% ------------------------------
+% Figures, tables, and float control
+% ------------------------------
+\usepackage{graphicx}
+\graphicspath{{report/images/}{results/benchmark/ftool/}{benchmark/ftool/}{images/}{../results/benchmark/ftool/}{../benchmark/ftool/}}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{placeins}
+
+% ------------------------------
+% Code listings
+% ------------------------------
+\usepackage{xcolor}
+\usepackage{listings}
+\lstdefinestyle{codeStyle}{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{teal},
+    stringstyle=\color{purple},
+    numbers=left,
+    numberstyle=\tiny,
+    stepnumber=1,
+    numbersep=8pt,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4
+}
+\lstset{style=codeStyle}
+
+% ------------------------------
+% Hyperlinks
+% ------------------------------
+\usepackage[hidelinks]{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+% ------------------------------
+% Bibliography (placeholder)
+% ------------------------------
+\usepackage[backend=biber,style=ieee]{biblatex}
+\addbibresource{report/chapters/bibliography.bib}
+
+\begin{document}
+
+% ============================================================
+% Title Page
+% ============================================================
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+    \begin{flushright}
+        {\large \today\par}
+    \end{flushright}
+
+    \vspace*{0.5cm}
+
+    \begin{center}
+        \includegraphics[width=0.42\textwidth]{metu_logo.jpg}\par
+        \vspace{0.7cm}
+        {\LARGE CE4011 Assignment 4\par}
+        \vspace{0.45cm}
+        {\large Special Topics in Civil Engineering:\par}
+        {\large Structural Analysis Software Development\par}
+        \vspace{0.6cm}
+        {\large Spring Semester 2025--2026\par}
+        \vspace{0.3cm}
+        {\normalsize GitHub Repository: \url{https://github.com/ImranMETU/CE4011_Assignment4}\par}
+    \end{center}
+
+    \vspace{0.9cm}
+
+    \noindent
+    \begin{minipage}[t]{0.58\textwidth}
+        \textbf{Submitted By}\\[0.35cm]
+        Imran Shahriar\\[0.2cm]
+        2735835\\[0.2cm]
+        MSc. in Structural Engineering
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.38\textwidth}
+        \raggedleft
+        \textbf{Submitted To}\\[0.35cm]
+        Prof. Dr. Ozgur Kurc
+    \end{minipage}
+\end{titlepage}
+\hypersetup{pageanchor=true}
+
+% ============================================================
+% Front matter
+% ============================================================
+\pagenumbering{roman}
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+
+% ============================================================
+% Main matter
+% ============================================================
+\pagenumbering{arabic}
+
+\input{report/chapters/Chapter1_Assignment4_ProgramDesign}
+\input{report/chapters/Chapter2_Assignment4_TestingVerification}
+\input{report/chapters/Chapter3_Assignment4_StructuralAnalysisCases}
+\input{report/chapters/Chapter4_Assignment4_Conclusion}
+\input{report/chapters/Chapter5_Assignment4_References}
+
+\end{document}

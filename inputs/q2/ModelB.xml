@@ -1,0 +1,55 @@
+<structure>
+  <nodes>
+    <node id="1" x="0.0" y="8.0">
+      <restraints ux="true" uy="true" rz="true" />
+    </node>
+    <node id="2" x="7.0" y="8.0">
+      <restraints ux="false" uy="false" rz="false" />
+    </node>
+    <node id="3" x="16.0" y="8.0">
+      <restraints ux="true" uy="true" rz="false" />
+    </node>
+    <node id="4" x="3.0" y="0.0">
+      <restraints ux="true" uy="true" rz="false" />
+    </node>
+    <node id="5" x="13.0" y="0.0">
+      <restraints ux="true" uy="true" rz="false" />
+    </node>
+  </nodes>
+
+  <materials>
+    <material id="concrete" E="3.0e7" alpha="8.0e-6" />
+    <material id="steel" E="2.0e8" alpha="1.2e-5" />
+  </materials>
+
+  <sections>
+    <section id="beam" A="0.32" I="0.01706667" d="0.8" />
+    <section id="pipe" A="9.11e-5" I="0.0" d="0.03" />
+  </sections>
+
+  <elements>
+    <element id="1" type="frame" node_i="1" node_j="2" material="concrete" section="beam">
+      <member_loads>
+        <thermal T_top="0.0" T_bottom="50.0" />
+      </member_loads>
+    </element>
+
+    <element id="2" type="frame" node_i="2" node_j="3" material="concrete" section="beam">
+      <member_loads>
+        <thermal T_top="0.0" T_bottom="50.0" />
+      </member_loads>
+    </element>
+
+    <element id="3" type="truss" node_i="4" node_j="2" material="steel" section="pipe">
+      <member_loads>
+        <thermal T_uniform="50.0" />
+      </member_loads>
+    </element>
+
+    <element id="4" type="truss" node_i="5" node_j="2" material="steel" section="pipe">
+      <member_loads>
+        <thermal T_uniform="50.0" />
+      </member_loads>
+    </element>
+  </elements>
+</structure>

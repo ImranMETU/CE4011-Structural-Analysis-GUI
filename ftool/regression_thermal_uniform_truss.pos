@@ -1,0 +1,103 @@
+%HEADER     
+Neutral file created by Framoop module of FTOOL program
+'Two-Dimensional Analysis of a Frame'
+
+%HEADER.ANALYSIS
+'BEAM3D'
+
+%HEADER.ANALYSIS.ALGORITHM
+'LINEAR'
+
+%HEADER.BEAM_GEOMETRIC_STIFFNESS
+'SMALL_ROTATION_2NDORDER'
+
+%NODE
+2
+
+%NODE.COORD
+2
+1     0  0  0
+2     4  0  0
+
+%NODE.SUPPORT
+2
+1     1  1  1  1  1  1
+2     1  1  1  1  1  1
+
+%MATERIAL
+2
+
+%MATERIAL.ISOTROPIC
+2
+1     3e+007  0.2
+2     2e+008  0.3
+
+%MATERIAL.PROPERTY.THERMAL_EXPANSION
+2
+1     8e-006
+2     1.2e-005
+
+%SECTION.PROPERTY
+6
+1     0.32  0.266667  0  0  0  0.0170667  0  0.8  0
+2     9.11062e-005  8.19956e-005  0  0  0  9.58893e-009  0  0.03  0
+3     1e+007  0.266667  0  0  0  0.0170667  0  0.8  0
+4     1e+007  8.19956e-005  0  0  0  9.58893e-009  0  0.03  0
+5     1e+007  1e+007  0  0  0  1e+007  0  0.8  0
+6     1e+007  1e+007  0  0  0  1e+007  0  0.03  0
+
+%BEAM.ORIENTATION.VECTOR
+4
+1     0  1  0
+2     -1  0  0
+3     0  -1  0
+4     1  0  0
+
+%BEAM.END.LIBERATION
+4
+1     1  1  1  1  1  1  1  1  1  1  1  1
+2     1  1  1  1  1  0  1  1  1  1  1  1
+3     1  1  1  1  1  1  1  1  1  1  1  0
+4     1  1  1  1  1  0  1  1  1  1  1  0
+
+%ELEMENT
+1
+
+%ELEMENT.BEAM
+1
+1     2  2  1  1     1  2
+
+%LOAD.CASE.BEAM.TEMPERATURE
+1
+1
+30  0  0
+
+
+%RESULT
+1
+1   'Static_Load'
+
+%RESULT.CASE 
+1   1
+   1  'Step_1'  0.000   0.000
+
+%RESULT.CASE.STEP
+1
+
+
+%RESULT.CASE.STEP.NODAL.DISPLACEMENT 
+     2   'Displacements' 
+     1    +0.000e+000  +0.000e+000  +0.000e+000  +0.000e+000  +0.000e+000  +0.000e+000
+     2    +0.000e+000  +0.000e+000  +0.000e+000  +0.000e+000  +0.000e+000  +0.000e+000
+
+%RESULT.CASE.STEP.ELEMENT.NODAL.SCALAR
+   1
+  'SIGMA_XX '
+
+%RESULT.CASE.STEP.ELEMENT.NODAL.SCALAR.DATA
+   1
+   1
+   +6.55965e+000
+   -6.55965e+000
+
+%END

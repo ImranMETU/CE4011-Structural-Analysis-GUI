@@ -1,0 +1,44 @@
+<structure>
+  <nodes>
+    <node id="1" x="0.0" y="4.0">
+      <restraints ux="true" uy="true" rz="false" />
+    </node>
+    <node id="2" x="4.0" y="4.0">
+      <restraints ux="false" uy="false" rz="false" />
+    </node>
+    <node id="3" x="12.0" y="4.0">
+      <restraints ux="false" uy="false" rz="false" />
+    </node>
+    <node id="4" x="15.0" y="4.0">
+      <restraints ux="false" uy="false" rz="false" />
+    </node>
+    <node id="5" x="4.0" y="0.0">
+      <restraints ux="true" uy="true" rz="false" />
+    </node>
+    <node id="6" x="9.0" y="0.0">
+      <restraints ux="true" uy="true" rz="false" />
+    </node>
+  </nodes>
+
+  <materials>
+    <material id="concrete" E="3.0e7" alpha="8.0e-6" />
+    <material id="steel" E="2.0e8" alpha="1.2e-5" />
+  </materials>
+
+  <sections>
+    <section id="beam_col" A="0.25" I="0.00520833" d="0.5" />
+    <section id="pipe" A="9.11e-5" I="0.0" d="0.03" />
+  </sections>
+
+  <elements>
+    <element id="1" type="frame" node_i="1" node_j="2" material="concrete" section="beam_col" />
+    <element id="2" type="frame" node_i="2" node_j="3" material="concrete" section="beam_col" />
+    <element id="3" type="frame" node_i="3" node_j="4" material="concrete" section="beam_col" />
+    <element id="4" type="frame" node_i="2" node_j="5" material="concrete" section="beam_col" />
+    <element id="5" type="truss" node_i="6" node_j="3" material="steel" section="pipe" />
+  </elements>
+
+  <nodal_loads>
+    <settlement node_id="5" uy="-0.002" />
+  </nodal_loads>
+</structure>

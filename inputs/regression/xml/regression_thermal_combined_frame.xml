@@ -1,0 +1,28 @@
+<structure>
+  <nodes>
+    <node id="1" x="0.0" y="0.0">
+      <restraints ux="true" uy="true" rz="true"/>
+    </node>
+    <node id="2" x="4.0" y="0.0">
+      <restraints ux="true" uy="true" rz="true"/>
+    </node>
+  </nodes>
+
+  <materials>
+    <material id="concrete" E="3.0e10" alpha="8.0e-6"/>
+  </materials>
+
+  <sections>
+    <section id="frame_sec" A="0.32" I="0.01706667" d="0.8"/>
+  </sections>
+
+  <elements>
+    <element id="1" type="frame" node_i="1" node_j="2" material="concrete" section="frame_sec">
+      <member_loads>
+        <thermal T_top="10.0" T_bottom="20.0"/>
+      </member_loads>
+    </element>
+  </elements>
+
+  <nodal_loads/>
+</structure>

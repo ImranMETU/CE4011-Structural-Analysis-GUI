@@ -1,0 +1,16 @@
+{
+  "title": "Settlement test case",
+  "nodes": [
+    {"id": 0, "x": 0.0, "y": 0.0, "restraints": [true, true, true], "prescribed_displacements": {"ux": 0.0, "uy": -0.002, "rz": 0.0}},
+    {"id": 1, "x": 4.0, "y": 0.0, "restraints": [false, false, false], "prescribed_displacements": {"ux": 0.0, "uy": 0.0, "rz": 0.0}}
+  ],
+  "materials": [
+    {"id": "m1", "e": 200.0e9}
+  ],
+  "sections": [
+    {"id": "s1", "a": 0.01, "i": 8.0e-5, "d": 0.5}
+  ],
+  "elements": [
+    {"id": 1, "type": "frame", "node_i": 0, "node_j": 1, "material": "m1", "section": "s1"}
+  ]
+}
