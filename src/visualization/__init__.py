@@ -1,5 +1,10 @@
 """Matplotlib visualization helpers for static structural results."""
 
+from .ground_motion_plots import (
+    plot_acceleration_history,
+    plot_response_spectrum_sa,
+    plot_response_spectrum_sd,
+)
 from .modal_plots import (
     plot_modal_frequencies,
     plot_modal_periods,
@@ -14,6 +19,9 @@ from .static_plots import (
 )
 
 __all__ = [
+    "plot_acceleration_history",
+    "plot_response_spectrum_sa",
+    "plot_response_spectrum_sd",
     "plot_modal_frequencies",
     "plot_modal_periods",
     "plot_mode_shape",
