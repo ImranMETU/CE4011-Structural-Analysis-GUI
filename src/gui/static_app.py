@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from matplotlib.patches import Rectangle
 
 SRC_ROOT = Path(__file__).resolve().parents[1]
 IO_ROOT = SRC_ROOT / "io"
@@ -34,7 +35,22 @@ from gui.input_dialogs import (  # noqa: E402
     open_thermal_loads_dialog,
     open_truss_elements_dialog,
 )
+from gui.interactive_selection import (  # noqa: E402
+    pick_element,
+    pick_node,
+    select_elements_in_rectangle,
+    select_nodes_in_rectangle,
+)
 from gui.model_builder import ModelBuilder  # noqa: E402
+from gui.result_tables import (  # noqa: E402
+    format_member_force_rows,
+    format_modal_frequency_rows,
+    format_modal_participation_rows,
+    format_nodal_displacement_rows,
+    format_reaction_rows,
+    open_table_window,
+    write_table_csv,
+)
 from model.structure import Structure  # noqa: E402
 from postprocessing.modal_results import package_modal_results  # noqa: E402
 from postprocessing.static_results import run_static_analysis  # noqa: E402
@@ -154,6 +170,13 @@ class StaticAnalysisApp:
         self.model_builder = ModelBuilder()
         self.static_result: dict[str, Any] | None = None
         self.modal_result: dict[str, Any] | None = None
+        self.current_table: dict[str, Any] | None = None
+        self.selected_nodes: set[int] = set()
+        self.selected_elements: set[int] = set()
+        self._selection_drag_start: tuple[float, float] | None = None
+        self._selection_drag_start_pixel: tuple[float, float] | None = None
+        self._selection_rect_artist: Rectangle | None = None
+        self._selection_artists: list[Any] = []
 
         self.plot_type = tk.StringVar(value=PLOT_TYPES[0])
         self.default_mass = tk.StringVar(value="10000.0")
@@ -165,6 +188,7 @@ class StaticAnalysisApp:
         self.canvas: FigureCanvasTkAgg | None = None
 
         self.summary_text: tk.Text | None = None
+        self.selection_text: tk.Text | None = None
         self.plot_menu: tk.OptionMenu | None = None
 
         self._build_menu()
@@ -219,6 +243,25 @@ class StaticAnalysisApp:
         display_menu.add_cascade(label="Modal", menu=modal_menu)
         menu_bar.add_cascade(label="Display", menu=display_menu)
 
+        tables_menu = tk.Menu(menu_bar, tearoff=False)
+        tables_menu.add_command(label="Nodal Displacements", command=self.show_nodal_displacements_table)
+        tables_menu.add_command(label="Support Reactions", command=self.show_support_reactions_table)
+        tables_menu.add_command(label="Member-End Forces", command=self.show_member_end_forces_table)
+        tables_menu.add_separator()
+        tables_menu.add_command(label="Modal Frequencies", command=self.show_modal_frequencies_table)
+        tables_menu.add_command(label="Modal Participation Factors", command=self.show_modal_participation_table)
+        tables_menu.add_separator()
+        tables_menu.add_command(label="Export Current Table to CSV", command=self.export_current_table)
+        menu_bar.add_cascade(label="Tables", menu=tables_menu)
+
+        select_menu = tk.Menu(menu_bar, tearoff=False)
+        select_menu.add_command(label="Clear Selection", command=self.clear_selection)
+        select_menu.add_command(label="Select All Nodes", command=self.select_all_nodes)
+        select_menu.add_command(label="Select All Elements", command=self.select_all_elements)
+        select_menu.add_separator()
+        select_menu.add_command(label="Selection Help", command=self.show_selection_help)
+        menu_bar.add_cascade(label="Select", menu=select_menu)
+
         help_menu = tk.Menu(menu_bar, tearoff=False)
         help_menu.add_command(label="About", command=self.show_about)
         help_menu.add_command(label="Input Workflow Help", command=self.show_input_workflow_help)
@@ -261,14 +304,20 @@ class StaticAnalysisApp:
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self._connect_selection_events()
 
         summary_frame = tk.Frame(body, width=260, padx=8, pady=8)
         body.add(summary_frame)
 
         tk.Label(summary_frame, text="Summary", font=("TkDefaultFont", 10, "bold")).pack(anchor=tk.W)
-        self.summary_text = tk.Text(summary_frame, width=36, height=24, wrap=tk.WORD)
+        self.summary_text = tk.Text(summary_frame, width=36, height=14, wrap=tk.WORD)
         self.summary_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.summary_text.configure(state=tk.DISABLED)
+
+        tk.Label(summary_frame, text="Selection", font=("TkDefaultFont", 10, "bold")).pack(anchor=tk.W, pady=(8, 0))
+        self.selection_text = tk.Text(summary_frame, width=36, height=14, wrap=tk.WORD)
+        self.selection_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.selection_text.configure(state=tk.DISABLED)
 
     def load_file(self) -> None:
         file_path = filedialog.askopenfilename(
@@ -341,6 +390,8 @@ class StaticAnalysisApp:
         self.model_builder.load_from_structure_dict(data, mass_mapping)
         self.static_result = None
         self.modal_result = None
+        self.current_table = None
+        self.clear_selection(redraw=False)
         self._draw_empty_canvas()
 
     def new_model(self) -> None:
@@ -351,6 +402,8 @@ class StaticAnalysisApp:
         self.input_source = "form"
         self.static_result = None
         self.modal_result = None
+        self.current_table = None
+        self.clear_selection(redraw=False)
         self._apply_analysis_options_to_controls()
         self._draw_empty_canvas()
         self._update_summary("New form-based model created.\nUse Define menu items to add model data.")
@@ -479,6 +532,7 @@ class StaticAnalysisApp:
 
         try:
             self.static_result = run_static_analysis(self.model_data)
+            self.current_table = None
             if self.plot_type.get() not in STATIC_PLOT_TYPES:
                 self.plot_type.set("Geometry")
             self._redraw_current_plot()
@@ -506,6 +560,7 @@ class StaticAnalysisApp:
 
             modal = solve_modal_analysis(structure, mass_mapping, n_modes=n_modes)
             self.modal_result = package_modal_results(modal, structure)
+            self.current_table = None
             if self.plot_type.get() not in MODAL_PLOT_TYPES:
                 self.plot_type.set("Mode 1")
             self._redraw_current_plot()
@@ -578,6 +633,7 @@ class StaticAnalysisApp:
             raise ValueError(f"Unknown plot type: {plot_name}")
 
         self.figure.tight_layout()
+        self._draw_selection_highlights()
         if self.canvas is not None:
             self.canvas.draw_idle()
 
@@ -613,6 +669,7 @@ class StaticAnalysisApp:
         self.ax.set_xlabel("X")
         self.ax.set_ylabel("Y")
         self.ax.grid(True, color="0.9")
+        self._draw_selection_highlights()
         if self.canvas is not None:
             self.canvas.draw_idle()
 
@@ -657,10 +714,409 @@ class StaticAnalysisApp:
         self.summary_text.delete("1.0", tk.END)
         self.summary_text.insert(tk.END, summary)
         self.summary_text.configure(state=tk.DISABLED)
+        self._update_selection_panel()
 
     def _show_error(self, title: str, exc: Exception) -> None:
         detail = "".join(traceback.format_exception_only(type(exc), exc)).strip()
         messagebox.showerror(title, detail)
+
+    def _connect_selection_events(self) -> None:
+        if self.canvas is None:
+            return
+        self.canvas.mpl_connect("button_press_event", self._on_canvas_press)
+        self.canvas.mpl_connect("motion_notify_event", self._on_canvas_motion)
+        self.canvas.mpl_connect("button_release_event", self._on_canvas_release)
+
+    def _on_canvas_press(self, event: Any) -> None:
+        if not self._selection_supported_plot():
+            return
+        if event.inaxes != self.ax or event.xdata is None or event.ydata is None or event.button != 1:
+            return
+        self._selection_drag_start = (float(event.xdata), float(event.ydata))
+        self._selection_drag_start_pixel = (float(event.x), float(event.y))
+        self._remove_selection_rectangle()
+
+    def _on_canvas_motion(self, event: Any) -> None:
+        if self._selection_drag_start is None or event.inaxes != self.ax or event.xdata is None or event.ydata is None:
+            return
+        if self._selection_drag_start_pixel is None:
+            return
+        if abs(float(event.x) - self._selection_drag_start_pixel[0]) < 3 and abs(float(event.y) - self._selection_drag_start_pixel[1]) < 3:
+            return
+
+        x0, y0 = self._selection_drag_start
+        x1, y1 = float(event.xdata), float(event.ydata)
+        crossing = x1 < x0
+        edge = "tab:green" if crossing else "tab:blue"
+        face = "green" if crossing else "blue"
+        self._remove_selection_rectangle(draw=False)
+        self._selection_rect_artist = Rectangle(
+            (min(x0, x1), min(y0, y1)),
+            abs(x1 - x0),
+            abs(y1 - y0),
+            edgecolor=edge,
+            facecolor=face,
+            alpha=0.18,
+            linewidth=1.5,
+            linestyle="-",
+            zorder=50,
+        )
+        self.ax.add_patch(self._selection_rect_artist)
+        if self.canvas is not None:
+            self.canvas.draw_idle()
+
+    def _on_canvas_release(self, event: Any) -> None:
+        if self._selection_drag_start is None:
+            return
+
+        start = self._selection_drag_start
+        start_pixel = self._selection_drag_start_pixel
+        self._selection_drag_start = None
+        self._selection_drag_start_pixel = None
+        self._remove_selection_rectangle(draw=False)
+
+        if event.inaxes != self.ax or event.xdata is None or event.ydata is None:
+            self._draw_selection_highlights()
+            return
+
+        end = (float(event.xdata), float(event.ydata))
+        is_click = True
+        if start_pixel is not None:
+            is_click = abs(float(event.x) - start_pixel[0]) < 5 and abs(float(event.y) - start_pixel[1]) < 5
+
+        if is_click:
+            self._select_by_click(end)
+        else:
+            self._select_by_rectangle(start, end)
+
+    def _select_by_click(self, point: tuple[float, float]) -> None:
+        nodes, elements = self._selection_geometry()
+        tolerance = self._selection_tolerance()
+        node_id = pick_node(nodes, point, tolerance)
+        if node_id is not None:
+            self.selected_nodes = {node_id}
+            self.selected_elements.clear()
+        else:
+            element_id = pick_element(elements, nodes, point, tolerance)
+            self.selected_elements = {element_id} if element_id is not None else set()
+            self.selected_nodes.clear()
+        self._draw_selection_highlights()
+
+    def _select_by_rectangle(self, start: tuple[float, float], end: tuple[float, float]) -> None:
+        nodes, elements = self._selection_geometry()
+        rect = (start[0], start[1], end[0], end[1])
+        crossing = end[0] < start[0]
+        self.selected_nodes = select_nodes_in_rectangle(nodes, rect)
+        self.selected_elements = select_elements_in_rectangle(elements, nodes, rect, crossing=crossing)
+        self._draw_selection_highlights()
+
+    def clear_selection(self, redraw: bool = True) -> None:
+        self.selected_nodes.clear()
+        self.selected_elements.clear()
+        self._remove_selection_rectangle(draw=False)
+        if redraw:
+            self._draw_selection_highlights()
+        else:
+            self._clear_selection_artists()
+            self._update_selection_panel()
+
+    def select_all_nodes(self) -> None:
+        nodes, _elements = self._selection_geometry()
+        self.selected_nodes = set(nodes)
+        self.selected_elements.clear()
+        self._draw_selection_highlights()
+
+    def select_all_elements(self) -> None:
+        _nodes, elements = self._selection_geometry()
+        self.selected_nodes.clear()
+        self.selected_elements = set(elements)
+        self._draw_selection_highlights()
+
+    def show_selection_help(self) -> None:
+        messagebox.showinfo(
+            "Selection Help",
+            "Click near a node or element to select it.\n\n"
+            "Drag left-to-right for blue window selection: elements require both end nodes inside.\n"
+            "Drag right-to-left for green crossing selection: elements are selected if they intersect the rectangle.\n\n"
+            "Selection highlights are display-only and do not modify the structural model. They are shown on "
+            "geometry-shaped views, not modal frequency/period bar charts.",
+        )
+
+    def _draw_selection_highlights(self) -> None:
+        self._clear_selection_artists()
+        if not self._selection_supported_plot():
+            self._update_selection_panel()
+            if self.canvas is not None:
+                self.canvas.draw_idle()
+            return
+
+        nodes, elements = self._selection_geometry()
+
+        for element_id in sorted(self.selected_elements):
+            element = elements.get(element_id)
+            if not element:
+                continue
+            node_i = nodes.get(int(element["node_i"]))
+            node_j = nodes.get(int(element["node_j"]))
+            if not node_i or not node_j:
+                continue
+            artist = self.ax.plot(
+                [node_i["x"], node_j["x"]],
+                [node_i["y"], node_j["y"]],
+                color="tab:red",
+                linewidth=4.0,
+                solid_capstyle="round",
+                zorder=60,
+            )[0]
+            self._selection_artists.append(artist)
+
+        selected_xy = [
+            (nodes[node_id]["x"], nodes[node_id]["y"])
+            for node_id in sorted(self.selected_nodes)
+            if node_id in nodes
+        ]
+        if selected_xy:
+            xs, ys = zip(*selected_xy)
+            artist = self.ax.scatter(
+                xs,
+                ys,
+                s=95,
+                facecolors="none",
+                edgecolors="tab:red",
+                linewidths=2.2,
+                zorder=70,
+            )
+            self._selection_artists.append(artist)
+
+        self._update_selection_panel()
+        if self.canvas is not None:
+            self.canvas.draw_idle()
+
+    def _clear_selection_artists(self) -> None:
+        for artist in self._selection_artists:
+            try:
+                artist.remove()
+            except ValueError:
+                pass
+        self._selection_artists = []
+
+    def _remove_selection_rectangle(self, draw: bool = True) -> None:
+        if self._selection_rect_artist is not None:
+            try:
+                self._selection_rect_artist.remove()
+            except ValueError:
+                pass
+        self._selection_rect_artist = None
+        if draw and self.canvas is not None:
+            self.canvas.draw_idle()
+
+    def _selection_tolerance(self) -> float:
+        x0, x1 = self.ax.get_xlim()
+        y0, y1 = self.ax.get_ylim()
+        span = max(abs(x1 - x0), abs(y1 - y0), 1.0)
+        return span * 0.025
+
+    def _selection_geometry(self) -> tuple[dict[int, dict[str, float]], dict[int, dict[str, Any]]]:
+        if self.static_result is not None:
+            return self.static_result.get("nodes", {}), self.static_result.get("elements", {})
+        if self.modal_result is not None and self.modal_result.get("nodes") and self.modal_result.get("elements"):
+            return self.modal_result.get("nodes", {}), self.modal_result.get("elements", {})
+        if self.model_data is None:
+            return {}, {}
+
+        nodes = {
+            int(node["id"]): {"x": float(node["x"]), "y": float(node["y"])}
+            for node in self.model_data.get("nodes", [])
+        }
+        elements = {
+            int(element["id"]): {
+                "type": str(element.get("type", "")),
+                "node_i": int(element["node_i"]),
+                "node_j": int(element["node_j"]),
+            }
+            for element in self.model_data.get("elements", [])
+        }
+        return nodes, elements
+
+    def _selection_supported_plot(self) -> bool:
+        return self.plot_type.get() not in {"Modal Frequencies", "Modal Periods"}
+
+    def _update_selection_panel(self) -> None:
+        if self.selection_text is None:
+            return
+        lines = self._selection_info_lines()
+        self.selection_text.configure(state=tk.NORMAL)
+        self.selection_text.delete("1.0", tk.END)
+        self.selection_text.insert(tk.END, "\n".join(lines))
+        self.selection_text.configure(state=tk.DISABLED)
+
+    def _selection_info_lines(self) -> list[str]:
+        if not self.selected_nodes and not self.selected_elements:
+            return [
+                "No selection.",
+                "",
+                "Click nodes/elements or drag a selection box.",
+                "Left-to-right: window.",
+                "Right-to-left: crossing.",
+            ]
+        if len(self.selected_nodes) + len(self.selected_elements) > 1:
+            return [
+                f"Selected nodes: {len(self.selected_nodes)}",
+                _compact_id_line("Node IDs", self.selected_nodes),
+                f"Selected elements: {len(self.selected_elements)}",
+                _compact_id_line("Element IDs", self.selected_elements),
+            ]
+        if self.selected_nodes:
+            return self._selected_node_lines(next(iter(self.selected_nodes)))
+        return self._selected_element_lines(next(iter(self.selected_elements)))
+
+    def _selected_node_lines(self, node_id: int) -> list[str]:
+        node = self._model_node(node_id)
+        geometry_nodes, _elements = self._selection_geometry()
+        coord = geometry_nodes.get(node_id, {})
+        lines = [
+            f"Node {node_id}",
+            f"x: {float(coord.get('x', node.get('x', 0.0))):.6g}",
+            f"y: {float(coord.get('y', node.get('y', 0.0))):.6g}",
+        ]
+        restraints = node.get("restraints", {})
+        if restraints:
+            lines.append(
+                "restraints: "
+                + ", ".join(f"{dof}={'FIX' if restraints.get(dof) else 'FREE'}" for dof in ("ux", "uy", "rz"))
+            )
+        if node.get("prescribed_displacements"):
+            lines.append(f"prescribed: {node['prescribed_displacements']}")
+
+        nodal_load = self._nodal_load(node_id)
+        if nodal_load:
+            lines.append(f"nodal load: Fx={nodal_load.get('fx', 0.0):.6e}, Fy={nodal_load.get('fy', 0.0):.6e}, Mz={nodal_load.get('mz', 0.0):.6e}")
+
+        if self.static_result is not None:
+            disp = self.static_result.get("displacements", {}).get(node_id)
+            if disp:
+                lines.append(f"disp: ux={disp.get('ux', 0.0):.6e}, uy={disp.get('uy', 0.0):.6e}, rz={disp.get('rz', 0.0):.6e}")
+            reaction = self.static_result.get("reactions", {}).get(node_id)
+            if reaction:
+                lines.append(f"reaction: Rx={reaction.get('rx', 0.0):.6e}, Ry={reaction.get('ry', 0.0):.6e}, Mz={reaction.get('mz', 0.0):.6e}")
+        return lines
+
+    def _selected_element_lines(self, element_id: int) -> list[str]:
+        element = self._model_element(element_id)
+        lines = [
+            f"Element {element_id}",
+            f"type: {element.get('type', '')}",
+            f"node_i: {element.get('node_i', '')}",
+            f"node_j: {element.get('node_j', '')}",
+            f"material: {element.get('material', '')}",
+            f"section: {element.get('section', '')}",
+        ]
+        if element.get("member_loads"):
+            lines.append(f"member loads: {element['member_loads']}")
+
+        if self.static_result is not None:
+            forces = self.static_result.get("member_end_forces", {}).get(element_id)
+            if forces:
+                i_end = forces.get("node_i", {})
+                j_end = forces.get("node_j", {})
+                lines.extend(
+                    [
+                        "member-end forces:",
+                        f"  i: Nx={i_end.get('nx', 0.0):.6e}, Vy={i_end.get('vy', 0.0):.6e}, Mz={i_end.get('mz', 0.0):.6e}",
+                        f"  j: Nx={j_end.get('nx', 0.0):.6e}, Vy={j_end.get('vy', 0.0):.6e}, Mz={j_end.get('mz', 0.0):.6e}",
+                    ]
+                )
+        return lines
+
+    def _model_node(self, node_id: int) -> dict[str, Any]:
+        if self.model_data is None:
+            return {}
+        for node in self.model_data.get("nodes", []):
+            if int(node.get("id")) == int(node_id):
+                return node
+        return {}
+
+    def _model_element(self, element_id: int) -> dict[str, Any]:
+        if self.model_data is None:
+            return {}
+        for element in self.model_data.get("elements", []):
+            if int(element.get("id")) == int(element_id):
+                return element
+        return {}
+
+    def _nodal_load(self, node_id: int) -> dict[str, Any] | None:
+        if self.model_data is None:
+            return None
+        for load in self.model_data.get("nodal_loads", []):
+            if int(load.get("node")) == int(node_id):
+                return load
+        return None
+
+    def show_nodal_displacements_table(self) -> None:
+        if self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis before opening displacement results.")
+            return
+        headers, rows = format_nodal_displacement_rows(self.static_result)
+        self._open_result_table("Nodal Displacements", headers, rows)
+
+    def show_support_reactions_table(self) -> None:
+        if self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis before opening support reaction results.")
+            return
+        headers, rows = format_reaction_rows(self.static_result)
+        self._open_result_table("Support Reactions", headers, rows)
+
+    def show_member_end_forces_table(self) -> None:
+        if self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis before opening member-end force results.")
+            return
+        headers, rows = format_member_force_rows(self.static_result)
+        self._open_result_table("Member-End Forces", headers, rows)
+
+    def show_modal_frequencies_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            return
+        headers, rows = format_modal_frequency_rows(self.modal_result)
+        self._open_result_table("Modal Frequencies", headers, rows)
+
+    def show_modal_participation_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            return
+        headers, rows = format_modal_participation_rows(self.modal_result)
+        if not rows:
+            messagebox.showerror(
+                "No modal participation data",
+                "Modal participation data are not available for this model/result.",
+            )
+            return
+        self._open_result_table("Modal Participation Factors", headers, rows)
+
+    def export_current_table(self) -> None:
+        if self.current_table is None:
+            messagebox.showerror("No table", "No table is currently available for export.")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            title="Export Current Table to CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        try:
+            write_table_csv(file_path, self.current_table["headers"], self.current_table["rows"])
+        except OSError as exc:
+            self._show_error("Failed to export table", exc)
+            return
+
+        messagebox.showinfo("Export complete", f"Exported {self.current_table['title']} to:\n{file_path}")
+
+    def _open_result_table(self, title: str, headers: list[str], rows: list[list[str]]) -> None:
+        self.current_table = {"title": title, "headers": headers, "rows": rows}
+        open_table_window(self.root, title, headers, rows, export_command=self.export_current_table)
 
     def _modal_summary_lines(self) -> list[str]:
         if self.modal_result is None:
@@ -807,7 +1263,8 @@ class StaticAnalysisApp:
             "Limitations",
             "This is a simplified SAP-like postprocessor. It does not include mouse-based drawing, "
             "nonlinear analysis, staged construction, time history, P-Delta, design checks, "
-            "load combinations, or full SAP2000-style tables.",
+            "load combinations, or full SAP2000-style tables. Selection highlights are available on "
+            "geometry-shaped plots, not modal frequency/period bar charts.",
         )
 
     def show_about(self) -> None:
@@ -871,6 +1328,13 @@ def _static_plot_function(plot_name: str) -> Callable[..., Any]:
         "Bending Moment Diagram": plot_bending_moment_diagram,
     }
     return mapping[plot_name]
+
+
+def _compact_id_line(label: str, ids: set[int]) -> str:
+    values = ", ".join(str(item) for item in sorted(ids))
+    if len(values) > 80:
+        values = values[:77] + "..."
+    return f"{label}: {values if values else '-'}"
 
 
 def main() -> None:
