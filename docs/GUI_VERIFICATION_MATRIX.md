@@ -1,0 +1,21 @@
+# GUI Verification Matrix
+
+| Case ID | Assignment Source | Input File Path | Model Type | Expected Status | Required GUI Views | Screenshot Required | Notes |
+|---|---|---|---|---|---|---|---|
+| A3_FRAME_REGRESSION | Assignment 3 | Not found | Frame | warning | Geometry, Deformed Shape, Force Diagrams | no | No dedicated Assignment 3 frame regression input was found in the current `inputs/` tree. |
+| A3_TRUSS_REGRESSION | Assignment 3 | Not found | Truss | warning | Geometry, Axial Force Diagram | no | No dedicated Assignment 3 truss regression input was found in the current `inputs/` tree. |
+| A3_MIXED_REGRESSION | Assignment 3 | Not found | Mixed frame-truss | warning | Geometry, Deformed Shape, Force Diagrams | no | Mixed cases are available from Assignment 4 Q2 XML inputs. |
+| A3_Q3_A_E | Assignment 3 Q3 | Not found | Unknown | warning | As applicable | no | Q3 samples a-e were not found in the current repository input folders. |
+| A4_Q2_MODEL_A | Assignment 4 Q2(a) | `inputs/q2/ModelA.xml` | Mixed frame-truss with settlement | solve | Geometry, Deformed Shape, Axial Force Diagram, Shear Force Diagram, Bending Moment Diagram | yes | Main Q2(a) settlement-style structure. |
+| A4_Q2_MODEL_B | Assignment 4 Q2(b) | `inputs/q2/ModelB.xml` | Mixed frame-truss with thermal loading | solve | Geometry, Deformed Shape, Axial Force Diagram, Shear Force Diagram, Bending Moment Diagram | yes | Main Q2(b) thermal-style structure. |
+| A4_REG_THERMAL_TRUSS_XML | Assignment 4 thermal regression | `inputs/regression/xml/regression_thermal_uniform_truss.xml` | Truss thermal | solve | Geometry, Axial Force Diagram | yes | Truss elements do not produce shear/moment diagrams. |
+| A4_REG_THERMAL_GRADIENT_XML | Assignment 4 thermal regression | `inputs/regression/xml/regression_thermal_gradient_frame.xml` | Frame thermal gradient | solve | Geometry, Deformed Shape, Axial Force Diagram, Shear Force Diagram, Bending Moment Diagram | yes | Fixed-fixed frame gradient case. |
+| A4_REG_THERMAL_COMBINED_XML | Assignment 4 thermal regression | `inputs/regression/xml/regression_thermal_combined_frame.xml` | Frame combined thermal | solve | Geometry, Deformed Shape, Axial Force Diagram, Shear Force Diagram, Bending Moment Diagram | yes | Combined uniform and gradient thermal case. |
+| A4_REG_SETTLEMENT_XML | Assignment 4 settlement regression | `inputs/regression/xml/regression_settlement_single_frame.xml` | Frame settlement | solve | Geometry, Deformed Shape, Shear Force Diagram, Bending Moment Diagram | yes | Single-frame support settlement regression. |
+| A4_JSON_THERMAL_BAR | Assignment 4 thermal JSON | `inputs/thermal_bar_fixed_fixed.json` | Fixed-fixed thermal frame/bar | solve | Geometry, Axial Force Diagram | no | JSON loader path check. |
+| A4_JSON_THERMAL_BEAM_GRADIENT | Assignment 4 thermal JSON | `inputs/thermal_beam_gradient_fixed_fixed.json` | Fixed-fixed thermal beam | solve | Geometry, Bending Moment Diagram | no | JSON loader path check. |
+| A4_JSON_THERMAL_FRAME_COMBINED | Assignment 4 thermal JSON | `inputs/thermal_frame_combined.json` | Fixed-fixed thermal frame | solve | Geometry, Axial Force Diagram, Bending Moment Diagram | no | JSON loader path check. |
+| TEXT_SIMPLE_PORTAL | Final project text input | `inputs/simple_portal_frame.txt` | Portal frame text deck | solve | Geometry, Deformed Shape, Modal Mass Summary | yes | Verifies text deck and modal mass parsing workflow. |
+| A4_TEXT_SETTLEMENT_EXAMPLE | Assignment 4 settlement UI/text workflow | `inputs/examples/a4_settlement_example.txt` | Frame settlement text deck | solve | Geometry, Deformed Shape, Shear Force Diagram, Bending Moment Diagram | yes | Mirrors the new Support Settlements dialog backend schema. |
+| A4_TEXT_THERMAL_EXAMPLE | Assignment 4 thermal UI/text workflow | `inputs/examples/a4_thermal_example.txt` | Mixed frame-truss thermal text deck | solve | Geometry, Deformed Shape, Axial Force Diagram, Shear Force Diagram, Bending Moment Diagram | yes | Mirrors the new Thermal Loads dialog backend schema. |
+| LEGACY_SETTLEMENT_JSON | Legacy settlement artifact | `settlement/test_settlement_input.json` | Legacy frame settlement JSON | error | Error message only | no | Uses legacy lowercase property keys and list restraints; expected to fail current GUI schema gracefully. |

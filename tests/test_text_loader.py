@@ -37,6 +37,16 @@ LOAD 2 FX=10000 FY=-500 MZ=25
 MASS 2 UX=10000 UY=0 RZ=0
 """
 
+THERMAL_SETTLEMENT_TEXT_MODEL = """
+MATERIAL steel E=200000000000 alpha=1.2e-5
+SECTION beam A=0.02 I=8e-5 d=0.5
+NODE 1 0 0 FIX FIX FIX
+NODE 2 5 0 FIX FIX FIX
+FRAME 1 1 2 steel beam
+THERMAL 1 T_TOP=0 T_BOTTOM=50
+SETTLEMENT 2 UY=-0.002
+"""
+
 
 def test_text_loader_parses_materials_sections_nodes_elements_loads_and_masses():
     data, mass_mapping = parse_text_model(TEXT_MODEL)
@@ -74,3 +84,14 @@ def test_load_text_model_reads_file(tmp_path):
 def test_text_loader_rejects_unknown_keyword():
     with pytest.raises(ValueError, match="unknown keyword"):
         parse_text_model("BOGUS 1 2 3")
+
+
+def test_text_loader_parses_thermal_and_settlement_lines():
+    data, _mass_mapping = parse_text_model(THERMAL_SETTLEMENT_TEXT_MODEL)
+
+    assert data["elements"][0]["member_loads"] == [{"type": "thermal", "T_top": 0.0, "T_bottom": 50.0}]
+    assert data["nodes"][1]["prescribed_displacements"] == {"ux": 0.0, "uy": -0.002, "rz": 0.0}
+
+    structure = Structure.from_dict(data)
+    structure.solve()
+    assert structure.compute_member_end_forces()

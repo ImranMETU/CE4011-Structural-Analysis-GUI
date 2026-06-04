@@ -75,3 +75,39 @@ def test_model_builder_analysis_options():
     assert builder.analysis_options["default_lateral_mass"] == pytest.approx(5000.0)
     assert builder.analysis_options["num_modes"] == 2
     assert builder.analysis_options["mode_shape_scale"] == pytest.approx(0.25)
+
+
+def test_model_builder_emits_thermal_member_loads():
+    builder = ModelBuilder()
+    builder.add_material("steel", 200000000000.0, 1.2e-5)
+    builder.add_section("beam", 0.02, 8.0e-5, 0.5)
+    builder.add_node(1, 0.0, 0.0, "FIX", "FIX", "FIX")
+    builder.add_node(2, 5.0, 0.0, "FIX", "FIX", "FIX")
+    builder.add_frame_element(1, 1, 2, "steel", "beam")
+    builder.add_thermal_load(1, "Gradient / Top-Bottom", T_top=0.0, T_bottom=50.0)
+
+    data = builder.to_structure_dict()
+
+    assert data["elements"][0]["member_loads"] == [{"type": "thermal", "T_top": 0.0, "T_bottom": 50.0}]
+    structure = Structure.from_dict(data)
+    structure.solve()
+    reactions = structure.compute_reactions()
+    assert reactions
+
+
+def test_model_builder_emits_prescribed_support_settlements():
+    builder = ModelBuilder()
+    builder.add_material("concrete", 30000000000.0, 8e-6)
+    builder.add_section("square_50", 0.25, 0.00520833, 0.5)
+    builder.add_node(1, 0.0, 0.0, "FIX", "FIX", "FIX")
+    builder.add_node(2, 4.0, 0.0, "FREE", "FIX", "FREE")
+    builder.add_frame_element(1, 1, 2, "concrete", "square_50")
+    builder.add_support_settlement(2, uy=-0.01)
+
+    data = builder.to_structure_dict()
+
+    assert data["nodes"][1]["prescribed_displacements"] == {"uy": -0.01}
+    structure = Structure.from_dict(data)
+    structure.solve()
+    reactions = structure.compute_reactions()
+    assert reactions

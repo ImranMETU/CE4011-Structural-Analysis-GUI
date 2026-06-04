@@ -98,6 +98,65 @@ def open_nodal_loads_dialog(parent, builder: ModelBuilder) -> None:
     )
 
 
+def open_thermal_loads_dialog(parent, builder: ModelBuilder) -> None:
+    _RecordDialog(
+        parent,
+        "Define Thermal Loads",
+        ("element", "thermal_type", "T_uniform", "T_top", "T_bottom"),
+        [
+            {"key": "element", "label": "Element ID", "default": "1"},
+            {
+                "key": "thermal_type",
+                "label": "Type",
+                "default": "Uniform",
+                "choices": ["Uniform", "Gradient / Top-Bottom", "Combined"],
+            },
+            {"key": "T_uniform", "label": "T_uniform", "default": "0"},
+            {"key": "T_top", "label": "T_top", "default": ""},
+            {"key": "T_bottom", "label": "T_bottom", "default": ""},
+        ],
+        lambda: [
+            {
+                "element": record["element"],
+                "thermal_type": record["thermal_type"],
+                "T_uniform": _blank_none(record.get("T_uniform")),
+                "T_top": _blank_none(record.get("T_top")),
+                "T_bottom": _blank_none(record.get("T_bottom")),
+            }
+            for record in builder.table_records("thermal_loads")
+        ],
+        lambda values: _save_thermal_load(parent, builder, values),
+        lambda key: builder.delete_record("thermal_loads", key),
+        "element",
+    )
+
+
+def open_support_settlements_dialog(parent, builder: ModelBuilder) -> None:
+    _RecordDialog(
+        parent,
+        "Define Support Settlements",
+        ("node", "ux", "uy", "rz"),
+        [
+            {"key": "node", "label": "Node ID", "default": "1"},
+            {"key": "ux", "label": "ux", "default": ""},
+            {"key": "uy", "label": "uy", "default": ""},
+            {"key": "rz", "label": "rz", "default": ""},
+        ],
+        lambda: [
+            {
+                "node": record["node"],
+                "ux": _blank_none(record.get("ux")),
+                "uy": _blank_none(record.get("uy")),
+                "rz": _blank_none(record.get("rz")),
+            }
+            for record in builder.table_records("support_settlements")
+        ],
+        lambda values: _save_support_settlement(parent, builder, values),
+        lambda key: builder.delete_record("support_settlements", key),
+        "node",
+    )
+
+
 def open_modal_masses_dialog(parent, builder: ModelBuilder) -> None:
     _RecordDialog(
         parent,
@@ -175,6 +234,79 @@ def _element_dialog(parent, builder: ModelBuilder, title: str, table: str, save_
         lambda key: builder.delete_record(table, key),
         "id",
     )
+
+
+def _save_thermal_load(parent, builder: ModelBuilder, values: dict[str, Any]) -> None:
+    element_id = int(values["element"])
+    element = _find_element(builder, element_id)
+    thermal_type = values["thermal_type"]
+    if element is None:
+        raise ValueError(f"Unknown element id {element_id}.")
+
+    has_gradient = thermal_type in {"Gradient / Top-Bottom", "Combined"}
+    if has_gradient and element["type"] == "truss":
+        messagebox.showwarning(
+            "Thermal gradient on truss",
+            "Truss elements are axial-only. The backend ignores thermal-gradient bending for trusses.",
+            parent=parent,
+        )
+    if has_gradient and element["type"] == "frame":
+        section = builder.sections.get(element["section"])
+        if section is not None and section.get("d") is None:
+            messagebox.showwarning(
+                "Missing section depth",
+                "Frame thermal gradients require section depth d. Analysis may fail until d is defined.",
+                parent=parent,
+            )
+
+    builder.add_thermal_load(
+        element_id,
+        thermal_type,
+        values.get("T_uniform"),
+        values.get("T_top"),
+        values.get("T_bottom"),
+    )
+
+
+def _save_support_settlement(parent, builder: ModelBuilder, values: dict[str, Any]) -> None:
+    node_id = int(values["node"])
+    node = builder.nodes.get(node_id)
+    if node is None:
+        raise ValueError(f"Unknown node id {node_id}.")
+
+    prescribed = {dof: _optional_float(values.get(dof)) for dof in ("ux", "uy", "rz")}
+    free_dofs = [
+        dof
+        for dof, value in prescribed.items()
+        if value not in (None, 0.0) and not node["restraints"].get(dof, False)
+    ]
+    if free_dofs:
+        messagebox.showwarning(
+            "Settlement on free DOF",
+            "The backend requires prescribed settlements on restrained DOFs. "
+            f"Free DOF(s): {', '.join(free_dofs)}.",
+            parent=parent,
+        )
+
+    builder.add_support_settlement(node_id, prescribed["ux"], prescribed["uy"], prescribed["rz"])
+
+
+def _find_element(builder: ModelBuilder, element_id: int) -> dict[str, Any] | None:
+    if element_id in builder.frame_elements:
+        return builder.frame_elements[element_id]
+    if element_id in builder.truss_elements:
+        return builder.truss_elements[element_id]
+    return None
+
+
+def _blank_none(value) -> str:
+    return "" if value is None else str(value)
+
+
+def _optional_float(value) -> float | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return float(value)
 
 
 def _node_record(record: dict[str, Any]) -> dict[str, Any]:

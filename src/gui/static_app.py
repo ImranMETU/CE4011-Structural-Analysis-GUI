@@ -30,6 +30,8 @@ from gui.input_dialogs import (  # noqa: E402
     open_nodal_loads_dialog,
     open_nodes_dialog,
     open_sections_dialog,
+    open_support_settlements_dialog,
+    open_thermal_loads_dialog,
     open_truss_elements_dialog,
 )
 from gui.model_builder import ModelBuilder  # noqa: E402
@@ -98,6 +100,8 @@ DEFAULT_TEXT_MODEL = """# CE4011 text model input deck
 # FRAME id node_i node_j material section
 # TRUSS id node_i node_j material section
 # LOAD node_id FX=0 FY=0 MZ=0
+# THERMAL element_id T_UNIFORM=50
+# SETTLEMENT node_id UX=0 UY=-0.002 RZ=0
 # MASS node_id UX=10000 UY=0 RZ=0
 
 MATERIAL steel E=200000000 alpha=1.2e-5
@@ -120,9 +124,14 @@ NODE id x y ux uy rz
 FRAME id node_i node_j material section
 TRUSS id node_i node_j material section
 LOAD node_id FX=10000 FY=0 MZ=0
+THERMAL element_id T_UNIFORM=50
+THERMAL element_id T_TOP=0 T_BOTTOM=50
+SETTLEMENT node_id UX=0 UY=-0.002 RZ=0
 MASS node_id UX=10000 UY=0 RZ=0
 
 Node restraints must be FIX or FREE.
+Thermal loads are assigned as element member loads.
+Settlements are prescribed nodal displacements and should be on restrained DOFs.
 MASS lines are optional and are used for modal analysis.
 """
 
@@ -168,6 +177,9 @@ class StaticAnalysisApp:
 
         file_menu = tk.Menu(menu_bar, tearoff=False)
         file_menu.add_command(label="New Model", command=self.new_model)
+        file_menu.add_command(label="New Assignment 4 Settlement Example", command=self.new_assignment4_settlement_example)
+        file_menu.add_command(label="New Assignment 4 Thermal Example", command=self.new_assignment4_thermal_example)
+        file_menu.add_separator()
         file_menu.add_command(label="Open XML Model", command=self.open_xml_model)
         file_menu.add_command(label="Open JSON Model", command=self.open_json_model)
         file_menu.add_command(label="Open Text Model", command=self.open_text_model)
@@ -183,6 +195,8 @@ class StaticAnalysisApp:
         define_menu.add_command(label="Frame Elements", command=self.define_frame_elements)
         define_menu.add_command(label="Truss Elements", command=self.define_truss_elements)
         define_menu.add_command(label="Nodal Loads", command=self.define_nodal_loads)
+        define_menu.add_command(label="Thermal Loads", command=self.define_thermal_loads)
+        define_menu.add_command(label="Support Settlements", command=self.define_support_settlements)
         define_menu.add_command(label="Modal Masses", command=self.define_modal_masses)
         define_menu.add_command(label="Analysis Options", command=self.define_analysis_options)
         define_menu.add_separator()
@@ -340,6 +354,26 @@ class StaticAnalysisApp:
         self._apply_analysis_options_to_controls()
         self._draw_empty_canvas()
         self._update_summary("New form-based model created.\nUse Define menu items to add model data.")
+
+    def new_assignment4_settlement_example(self) -> None:
+        self._load_example_text_model("inputs/examples/a4_settlement_example.txt")
+
+    def new_assignment4_thermal_example(self) -> None:
+        self._load_example_text_model("inputs/examples/a4_thermal_example.txt")
+
+    def _load_example_text_model(self, relative_path: str) -> None:
+        path = Path(__file__).resolve().parents[2] / relative_path
+        try:
+            data, mass_mapping = load_text_model(path)
+            text = path.read_text(encoding="utf-8")
+        except Exception as exc:
+            self._show_error("Failed to load example model", exc)
+            return
+
+        self.text_model_path = path
+        self._set_loaded_model(path, data, source="text", mass_mapping=mass_mapping)
+        self._open_text_editor(text)
+        self._update_summary(f"Loaded example text model: {path.name}\nRun static analysis to view results.")
 
     def new_text_model(self) -> None:
         self.text_model_path = None
@@ -600,6 +634,9 @@ class StaticAnalysisApp:
                         "Static analysis: run",
                         f"Nodes: {len(self.static_result['nodes'])}",
                         f"Elements: {len(self.static_result['elements'])}",
+                        f"Thermal load records: {self._thermal_load_count()}",
+                        f"Support settlement records: {self._settlement_count()}",
+                        f"Thermal/settlement included: {'yes' if self._thermal_load_count() or self._settlement_count() else 'no'}",
                         f"Max |displacement|: {max_disp:.6e}",
                         f"Support reaction records: {len(self.static_result['reactions'])}",
                         f"Member-force records: {len(self.static_result['member_end_forces'])}",
@@ -664,6 +701,23 @@ class StaticAnalysisApp:
 
         return lines
 
+    def _thermal_load_count(self) -> int:
+        if self.model_data is None:
+            return 0
+        return sum(len(element.get("member_loads", [])) for element in self.model_data.get("elements", []))
+
+    def _settlement_count(self) -> int:
+        if self.model_data is None:
+            return 0
+        return sum(
+            1
+            for node in self.model_data.get("nodes", [])
+            if any(
+                float(node.get("prescribed_displacements", {}).get(dof, 0.0)) != 0.0
+                for dof in ("ux", "uy", "rz")
+            )
+        )
+
     def define_materials(self) -> None:
         self._ensure_form_source()
         open_materials_dialog(self.root, self.model_builder)
@@ -687,6 +741,14 @@ class StaticAnalysisApp:
     def define_nodal_loads(self) -> None:
         self._ensure_form_source()
         open_nodal_loads_dialog(self.root, self.model_builder)
+
+    def define_thermal_loads(self) -> None:
+        self._ensure_form_source()
+        open_thermal_loads_dialog(self.root, self.model_builder)
+
+    def define_support_settlements(self) -> None:
+        self._ensure_form_source()
+        open_support_settlements_dialog(self.root, self.model_builder)
 
     def define_modal_masses(self) -> None:
         self._ensure_form_source()
@@ -722,6 +784,8 @@ class StaticAnalysisApp:
                     f"Sections: {len(self.model_data.get('sections', []))}",
                     f"Elements: {len(self.model_data.get('elements', []))}",
                     f"Nodal loads: {len(self.model_data.get('nodal_loads', []))}",
+                    f"Thermal loads: {self._thermal_load_count()}",
+                    f"Support settlements: {self._settlement_count()}",
                     f"Text MASS records: {mass_count}",
                 ]
             ),

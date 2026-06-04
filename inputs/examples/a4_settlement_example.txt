@@ -1,0 +1,13 @@
+# Assignment 4-style support settlement example
+# Units: N, m
+
+MATERIAL concrete E=30000000000 alpha=8e-6
+SECTION square_50 A=0.25 I=0.00520833 d=0.5
+
+NODE 1 0.0 0.0 FIX FIX FIX
+NODE 2 4.0 0.0 FREE FIX FREE
+
+FRAME 1 1 2 concrete square_50
+
+# Prescribed support settlement on restrained uy DOF at node 2
+SETTLEMENT 2 UY=-0.01

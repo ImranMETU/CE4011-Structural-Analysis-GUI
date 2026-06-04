@@ -45,6 +45,12 @@ def parse_text_model(text: str) -> tuple[dict[str, Any], dict[int, dict[str, flo
         elif keyword == "MASS":
             node_id, masses = _parse_mass(args, line_no)
             mass_mapping[node_id] = masses
+        elif keyword == "THERMAL":
+            element_id, load = _parse_thermal(args, line_no)
+            _attach_thermal_load(data["elements"], element_id, load, line_no)
+        elif keyword == "SETTLEMENT":
+            node_id, prescribed = _parse_settlement(args, line_no)
+            _attach_settlement(data["nodes"], node_id, prescribed, line_no)
         else:
             raise ValueError(f"Line {line_no}: unknown keyword {tokens[0]!r}.")
 
@@ -119,6 +125,55 @@ def _parse_mass(args: list[str], line_no: int) -> tuple[int, dict[str, float]]:
         "uy": float(props.get("UY", 0.0)),
         "rz": float(props.get("RZ", 0.0)),
     }
+
+
+def _parse_thermal(args: list[str], line_no: int) -> tuple[int, dict[str, float | str]]:
+    _require_len(args, 1, line_no, "THERMAL element_id T_UNIFORM=... or T_TOP=... T_BOTTOM=...")
+    props = _key_values(args[1:], line_no)
+    load: dict[str, float | str] = {"type": "thermal"}
+
+    has_uniform = "T_UNIFORM" in props
+    has_top = "T_TOP" in props
+    has_bottom = "T_BOTTOM" in props
+
+    if not has_uniform and not (has_top or has_bottom):
+        raise ValueError(f"Line {line_no}: THERMAL requires T_UNIFORM or T_TOP/T_BOTTOM values.")
+    if has_top != has_bottom:
+        raise ValueError(f"Line {line_no}: THERMAL T_TOP/T_BOTTOM must be provided together.")
+
+    if has_uniform:
+        load["T_uniform"] = float(props["T_UNIFORM"])
+    if has_top and has_bottom:
+        load["T_top"] = float(props["T_TOP"])
+        load["T_bottom"] = float(props["T_BOTTOM"])
+
+    return int(args[0]), load
+
+
+def _parse_settlement(args: list[str], line_no: int) -> tuple[int, dict[str, float]]:
+    _require_len(args, 1, line_no, "SETTLEMENT node_id UX=... UY=... RZ=...")
+    props = _key_values(args[1:], line_no)
+    return int(args[0]), {
+        "ux": float(props.get("UX", 0.0)),
+        "uy": float(props.get("UY", 0.0)),
+        "rz": float(props.get("RZ", 0.0)),
+    }
+
+
+def _attach_thermal_load(elements: list[dict[str, Any]], element_id: int, load: dict[str, Any], line_no: int) -> None:
+    for element in elements:
+        if int(element["id"]) == int(element_id):
+            element.setdefault("member_loads", []).append(load)
+            return
+    raise ValueError(f"Line {line_no}: THERMAL references unknown element id {element_id}.")
+
+
+def _attach_settlement(nodes: list[dict[str, Any]], node_id: int, prescribed: dict[str, float], line_no: int) -> None:
+    for node in nodes:
+        if int(node["id"]) == int(node_id):
+            node["prescribed_displacements"] = prescribed
+            return
+    raise ValueError(f"Line {line_no}: SETTLEMENT references unknown node id {node_id}.")
 
 
 def _key_values(tokens: list[str], line_no: int) -> dict[str, str]:
