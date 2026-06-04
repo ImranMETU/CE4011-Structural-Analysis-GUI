@@ -478,17 +478,8 @@ class StaticAnalysisApp:
 
     def new_model(self) -> None:
         self.model_builder.clear()
-        self.loaded_path = None
-        self.model_data = self.model_builder.to_structure_dict()
-        self.text_mass_mapping = None
-        self.input_source = "form"
-        self.generated_model_name = None
-        self.static_result = None
-        self.modal_result = None
-        self.current_table = None
-        self.clear_selection(redraw=False)
-        self._apply_analysis_options_to_controls()
-        self._draw_empty_canvas()
+        self.plot_type.set("Model View")
+        self._refresh_model_from_builder(source_label="New Form Model", redraw=True)
         self._update_summary("New form-based model created.\nUse Define menu items to add model data.")
 
     def new_assignment4_settlement_example(self) -> None:
@@ -691,10 +682,37 @@ class StaticAnalysisApp:
         if self.input_source == "text" and self.text_editor_widget is not None:
             return self._parse_current_text_editor(update_summary=False)
         if self.input_source == "form":
-            self.model_data = self.model_builder.to_structure_dict()
-            masses = self.model_builder.to_mass_mapping()
-            self.text_mass_mapping = masses if masses else None
+            self._refresh_model_from_builder(redraw=False)
         return True
+
+    def _refresh_model_from_builder(self, *, source_label: str = "Form Model", redraw: bool = True) -> None:
+        """Synchronize GUI model state from records entered through Define dialogs."""
+        data = self.model_builder.to_structure_dict()
+        masses = self.model_builder.to_mass_mapping()
+        previous_data = self.model_data
+        previous_masses = self.text_mass_mapping or {}
+        data_changed = data != previous_data
+        masses_changed = masses != previous_masses
+
+        self.loaded_path = None
+        self.model_data = data
+        self.text_mass_mapping = masses if masses else None
+        self.input_source = "form"
+        self.generated_model_name = source_label
+
+        if data_changed:
+            self.static_result = None
+            self.modal_result = None
+            self.current_table = None
+            self.clear_selection(redraw=False)
+        elif masses_changed:
+            self.modal_result = None
+            self.current_table = None
+
+        self._apply_analysis_options_to_controls()
+        if redraw and self.plot_type.get() in MODEL_VIEW_TYPES:
+            self._redraw_current_plot()
+        self._update_summary()
 
     def _apply_analysis_options_to_controls(self) -> None:
         options = self.model_builder.analysis_options
@@ -715,10 +733,13 @@ class StaticAnalysisApp:
 
     def on_plot_type_changed(self, _value: str | None = None) -> None:
         plot_name = self.plot_type.get()
-        if plot_name in MODEL_VIEW_TYPES and self.model_data is None:
-            messagebox.showerror("No model loaded", "Load or define a model before selecting Model View.")
-            self.plot_type.set("Geometry")
-            return
+        if plot_name in MODEL_VIEW_TYPES:
+            if not self._sync_model_source_if_needed():
+                return
+            if self._current_model_view_data() is None:
+                messagebox.showerror("No model loaded", "Load or define a model before selecting Model View.")
+                self.plot_type.set("Geometry")
+                return
         if plot_name in STATIC_PLOT_TYPES and self.static_result is None:
             messagebox.showerror("No static results", "Run static analysis before selecting a static result plot.")
             self.plot_type.set("Geometry")
@@ -744,12 +765,13 @@ class StaticAnalysisApp:
 
         plot_name = self.plot_type.get()
         if plot_name in MODEL_VIEW_TYPES:
-            if self.model_data is None:
+            model_view_data = self._current_model_view_data()
+            if model_view_data is None:
                 return
             options: dict[str, Any] = {"mass_mapping": self.text_mass_mapping or {}}
             if plot_name == "Presentation Model View":
                 options.update({"show_axes": False, "show_grid": False, "show_legend": True})
-            plot_model_view(self.model_data, ax=self.ax, options=options)
+            plot_model_view(model_view_data, ax=self.ax, options=options)
         elif plot_name in STATIC_PLOT_TYPES:
             if self.static_result is None:
                 return
@@ -773,6 +795,19 @@ class StaticAnalysisApp:
         self._draw_selection_highlights()
         if self.canvas is not None:
             self.canvas.draw_idle()
+
+    def _current_model_view_data(self) -> dict[str, Any] | None:
+        if self.model_data is not None:
+            return self.model_data
+        if self.static_result is not None:
+            return self.static_result
+        if self.modal_result is not None and self.modal_result.get("nodes") and self.modal_result.get("elements"):
+            return self.modal_result
+
+        fallback = self.model_builder.to_structure_dict()
+        if fallback.get("nodes") or fallback.get("elements"):
+            return fallback
+        return None
 
     def _draw_modal_plot(self, plot_name: str) -> None:
         if self.modal_result is None:
@@ -853,6 +888,18 @@ class StaticAnalysisApp:
                 lines.extend(self._drift_summary_lines())
             else:
                 lines.extend(["", "Static analysis: not run"])
+                if self.model_data is not None:
+                    nodes = self.model_data.get("nodes", [])
+                    elements = self.model_data.get("elements", [])
+                    lines.extend(
+                        [
+                            f"Nodes: {len(nodes)}",
+                            f"Elements: {len(elements)}",
+                            f"Thermal load records: {self._thermal_load_count()}",
+                            f"Support settlement records: {self._settlement_count()}",
+                        ]
+                    )
+                    lines.extend(self._model_view_validation_lines())
 
             if self.modal_result is not None:
                 lines.extend(self._modal_summary_lines())
@@ -871,6 +918,46 @@ class StaticAnalysisApp:
     def _show_error(self, title: str, exc: Exception) -> None:
         detail = "".join(traceback.format_exception_only(type(exc), exc)).strip()
         messagebox.showerror(title, detail)
+
+    def _model_view_validation_lines(self) -> list[str]:
+        if self.model_data is None:
+            return []
+
+        nodes = self.model_data.get("nodes", [])
+        elements = self.model_data.get("elements", [])
+        if not nodes:
+            return ["Model View notice: no nodes defined."]
+
+        lines: list[str] = []
+        if not elements:
+            lines.append("Model View notice: no elements defined yet.")
+
+        node_ids = {int(node["id"]) for node in nodes}
+        material_ids = {str(material["id"]) for material in self.model_data.get("materials", [])}
+        section_ids = {str(section["id"]) for section in self.model_data.get("sections", [])}
+        missing_node_refs = [
+            int(element["id"])
+            for element in elements
+            if int(element.get("node_i", -1)) not in node_ids or int(element.get("node_j", -1)) not in node_ids
+        ]
+        missing_material_refs = [
+            int(element["id"])
+            for element in elements
+            if str(element.get("material", "")) not in material_ids
+        ]
+        missing_section_refs = [
+            int(element["id"])
+            for element in elements
+            if str(element.get("section", "")) not in section_ids
+        ]
+
+        if missing_node_refs:
+            lines.append(f"Model View notice: missing node references in element(s) {_format_ids(missing_node_refs)}.")
+        if missing_material_refs:
+            lines.append(f"Model View notice: missing material references in element(s) {_format_ids(missing_material_refs)}.")
+        if missing_section_refs:
+            lines.append(f"Model View notice: missing section references in element(s) {_format_ids(missing_section_refs)}.")
+        return lines
 
     def _current_floor_displacements(self) -> dict[str, Any]:
         self._validate_drift_ready()
@@ -1409,46 +1496,50 @@ class StaticAnalysisApp:
 
     def define_materials(self) -> None:
         self._ensure_form_source()
-        open_materials_dialog(self.root, self.model_builder)
+        open_materials_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_sections(self) -> None:
         self._ensure_form_source()
-        open_sections_dialog(self.root, self.model_builder)
+        open_sections_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_nodes(self) -> None:
         self._ensure_form_source()
-        open_nodes_dialog(self.root, self.model_builder)
+        open_nodes_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_frame_elements(self) -> None:
         self._ensure_form_source()
-        open_frame_elements_dialog(self.root, self.model_builder)
+        open_frame_elements_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_truss_elements(self) -> None:
         self._ensure_form_source()
-        open_truss_elements_dialog(self.root, self.model_builder)
+        open_truss_elements_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_generate_frame_model(self) -> None:
         open_frame_generator_dialog(self.root, self._load_generated_frame_model)
 
     def define_nodal_loads(self) -> None:
         self._ensure_form_source()
-        open_nodal_loads_dialog(self.root, self.model_builder)
+        open_nodal_loads_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_thermal_loads(self) -> None:
         self._ensure_form_source()
-        open_thermal_loads_dialog(self.root, self.model_builder)
+        open_thermal_loads_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_support_settlements(self) -> None:
         self._ensure_form_source()
-        open_support_settlements_dialog(self.root, self.model_builder)
+        open_support_settlements_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_modal_masses(self) -> None:
         self._ensure_form_source()
-        open_modal_masses_dialog(self.root, self.model_builder)
+        open_modal_masses_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_analysis_options(self) -> None:
         self._ensure_form_source()
-        open_analysis_options_dialog(self.root, self.model_builder, on_apply=self._apply_analysis_options_to_controls)
+        open_analysis_options_dialog(self.root, self.model_builder, on_apply=self._on_analysis_options_applied)
+
+    def _on_analysis_options_applied(self) -> None:
+        self._apply_analysis_options_to_controls()
+        self._refresh_model_from_builder(redraw=True)
 
     def _ensure_form_source(self) -> None:
         if self.input_source is None:
@@ -1589,6 +1680,14 @@ def _compact_id_line(label: str, ids: set[int]) -> str:
     if len(values) > 80:
         values = values[:77] + "..."
     return f"{label}: {values if values else '-'}"
+
+
+def _format_ids(ids: list[int], limit: int = 8) -> str:
+    values = sorted(set(int(item) for item in ids))
+    text = ", ".join(str(item) for item in values[:limit])
+    if len(values) > limit:
+        text += ", ..."
+    return text
 
 
 def main() -> None:

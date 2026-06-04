@@ -13,7 +13,7 @@ from .model_builder import ModelBuilder
 FieldSpec = dict[str, Any]
 
 
-def open_materials_dialog(parent, builder: ModelBuilder) -> None:
+def open_materials_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _RecordDialog(
         parent,
         "Define Materials",
@@ -27,10 +27,11 @@ def open_materials_dialog(parent, builder: ModelBuilder) -> None:
         lambda values: builder.add_material(values["name"], values["E"], values["alpha"]),
         lambda key: builder.delete_record("materials", key),
         "name",
+        on_change=on_change,
     )
 
 
-def open_sections_dialog(parent, builder: ModelBuilder) -> None:
+def open_sections_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _RecordDialog(
         parent,
         "Define Sections",
@@ -48,10 +49,11 @@ def open_sections_dialog(parent, builder: ModelBuilder) -> None:
         lambda values: builder.add_section(values["name"], values["A"], values["I"], values["d"] or None),
         lambda key: builder.delete_record("sections", key),
         "name",
+        on_change=on_change,
     )
 
 
-def open_nodes_dialog(parent, builder: ModelBuilder) -> None:
+def open_nodes_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     restraint = ["FIX", "FREE"]
     _RecordDialog(
         parent,
@@ -69,18 +71,19 @@ def open_nodes_dialog(parent, builder: ModelBuilder) -> None:
         lambda values: builder.add_node(values["id"], values["x"], values["y"], values["ux"], values["uy"], values["rz"]),
         lambda key: builder.delete_record("nodes", key),
         "id",
+        on_change=on_change,
     )
 
 
-def open_frame_elements_dialog(parent, builder: ModelBuilder) -> None:
-    _element_dialog(parent, builder, "Define Frame Elements", "frame_elements", builder.add_frame_element)
+def open_frame_elements_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
+    _element_dialog(parent, builder, "Define Frame Elements", "frame_elements", builder.add_frame_element, on_change)
 
 
-def open_truss_elements_dialog(parent, builder: ModelBuilder) -> None:
-    _element_dialog(parent, builder, "Define Truss Elements", "truss_elements", builder.add_truss_element)
+def open_truss_elements_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
+    _element_dialog(parent, builder, "Define Truss Elements", "truss_elements", builder.add_truss_element, on_change)
 
 
-def open_nodal_loads_dialog(parent, builder: ModelBuilder) -> None:
+def open_nodal_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _RecordDialog(
         parent,
         "Define Nodal Loads",
@@ -95,10 +98,11 @@ def open_nodal_loads_dialog(parent, builder: ModelBuilder) -> None:
         lambda values: builder.add_nodal_load(values["node"], values["fx"], values["fy"], values["mz"]),
         lambda key: builder.delete_record("nodal_loads", key),
         "node",
+        on_change=on_change,
     )
 
 
-def open_thermal_loads_dialog(parent, builder: ModelBuilder) -> None:
+def open_thermal_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _RecordDialog(
         parent,
         "Define Thermal Loads",
@@ -128,10 +132,11 @@ def open_thermal_loads_dialog(parent, builder: ModelBuilder) -> None:
         lambda values: _save_thermal_load(parent, builder, values),
         lambda key: builder.delete_record("thermal_loads", key),
         "element",
+        on_change=on_change,
     )
 
 
-def open_support_settlements_dialog(parent, builder: ModelBuilder) -> None:
+def open_support_settlements_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _RecordDialog(
         parent,
         "Define Support Settlements",
@@ -154,10 +159,11 @@ def open_support_settlements_dialog(parent, builder: ModelBuilder) -> None:
         lambda values: _save_support_settlement(parent, builder, values),
         lambda key: builder.delete_record("support_settlements", key),
         "node",
+        on_change=on_change,
     )
 
 
-def open_modal_masses_dialog(parent, builder: ModelBuilder) -> None:
+def open_modal_masses_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _RecordDialog(
         parent,
         "Define Modal Masses",
@@ -172,6 +178,7 @@ def open_modal_masses_dialog(parent, builder: ModelBuilder) -> None:
         lambda values: builder.add_modal_mass(values["node"], values["ux"], values["uy"], values["rz"]),
         lambda key: builder.delete_record("modal_masses", key),
         "node",
+        on_change=on_change,
     )
 
 
@@ -217,7 +224,14 @@ def open_analysis_options_dialog(parent, builder: ModelBuilder, on_apply: Callab
     tk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=3)
 
 
-def _element_dialog(parent, builder: ModelBuilder, title: str, table: str, save_func: Callable[..., None]) -> None:
+def _element_dialog(
+    parent,
+    builder: ModelBuilder,
+    title: str,
+    table: str,
+    save_func: Callable[..., None],
+    on_change: Callable[[], None] | None = None,
+) -> None:
     _RecordDialog(
         parent,
         title,
@@ -233,6 +247,7 @@ def _element_dialog(parent, builder: ModelBuilder, title: str, table: str, save_
         lambda values: save_func(values["id"], values["node_i"], values["node_j"], values["material"], values["section"]),
         lambda key: builder.delete_record(table, key),
         "id",
+        on_change=on_change,
     )
 
 
@@ -332,12 +347,14 @@ class _RecordDialog:
         save_func: Callable[[dict[str, Any]], None],
         delete_func: Callable[[str], None],
         key_field: str,
+        on_change: Callable[[], None] | None = None,
     ):
         self.records_func = records_func
         self.save_func = save_func
         self.delete_func = delete_func
         self.key_field = key_field
         self.fields = fields
+        self.on_change = on_change
         self.entries: dict[str, tk.Entry | ttk.Combobox] = {}
 
         self.dialog = tk.Toplevel(parent)
@@ -368,7 +385,7 @@ class _RecordDialog:
         tk.Button(buttons, text="Add", command=self._save).pack(side=tk.LEFT, padx=3)
         tk.Button(buttons, text="Update", command=self._save).pack(side=tk.LEFT, padx=3)
         tk.Button(buttons, text="Delete", command=self._delete).pack(side=tk.LEFT, padx=3)
-        tk.Button(buttons, text="OK", command=self.dialog.destroy).pack(side=tk.RIGHT, padx=3)
+        tk.Button(buttons, text="OK", command=self._close_ok).pack(side=tk.RIGHT, padx=3)
         tk.Button(buttons, text="Cancel", command=self.dialog.destroy).pack(side=tk.RIGHT, padx=3)
 
         self._refresh()
@@ -383,6 +400,7 @@ class _RecordDialog:
             messagebox.showerror("Invalid input", str(exc), parent=self.dialog)
             return
         self._refresh()
+        self._notify_change()
 
     def _delete(self) -> None:
         selected = self.tree.selection()
@@ -390,6 +408,11 @@ class _RecordDialog:
             return
         self.delete_func(selected[0])
         self._refresh()
+        self._notify_change()
+
+    def _close_ok(self) -> None:
+        self._notify_change()
+        self.dialog.destroy()
 
     def _on_select(self, _event=None) -> None:
         selected = self.tree.selection()
@@ -407,3 +430,7 @@ class _RecordDialog:
             key = str(record[self.key_field])
             values = [record.get(col, "") for col in self.tree["columns"]]
             self.tree.insert("", tk.END, iid=key, values=values)
+
+    def _notify_change(self) -> None:
+        if self.on_change is not None:
+            self.on_change()
