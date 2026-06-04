@@ -5,6 +5,12 @@ from .ground_motion_plots import (
     plot_response_spectrum_sa,
     plot_response_spectrum_sd,
 )
+from .drift_plots import (
+    plot_drift_ratio_profile,
+    plot_floor_displacement_profile,
+    plot_roof_displacement_marker,
+    plot_story_drift_profile,
+)
 from .modal_plots import (
     plot_modal_frequencies,
     plot_modal_periods,
@@ -21,8 +27,12 @@ from .static_plots import (
 
 __all__ = [
     "plot_acceleration_history",
+    "plot_drift_ratio_profile",
+    "plot_floor_displacement_profile",
     "plot_response_spectrum_sa",
     "plot_response_spectrum_sd",
+    "plot_roof_displacement_marker",
+    "plot_story_drift_profile",
     "plot_modal_frequencies",
     "plot_modal_periods",
     "plot_mode_shape",
