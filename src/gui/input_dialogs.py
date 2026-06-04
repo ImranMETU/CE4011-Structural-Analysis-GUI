@@ -11,6 +11,7 @@ from .model_builder import ModelBuilder
 
 
 FieldSpec = dict[str, Any]
+MEMBER_LOAD_BUTTON_LABELS = ("Add", "Update", "Delete", "Apply", "OK", "Cancel")
 
 
 def open_materials_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
@@ -103,27 +104,33 @@ def open_nodal_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[
 
 
 def open_member_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
+    _MemberLoadsDialog(parent, builder, on_change=on_change)
+
+
+def get_member_load_field_states(load_type: str) -> dict[str, str]:
+    """Return Tk widget states for member-load fields."""
+    normalized = str(load_type).strip().lower()
+    if normalized == "udl":
+        return {"w": "normal", "p": "disabled", "a": "disabled", "x_start": "normal", "x_end": "normal"}
+    return {"w": "disabled", "p": "normal", "a": "normal", "x_start": "disabled", "x_end": "disabled"}
+
+
+def member_load_default_values(builder: ModelBuilder) -> dict[str, str]:
+    """Return default values for the Member Loads dialog."""
     element_ids = sorted(set(builder.frame_elements) | set(builder.truss_elements))
-    _RecordDialog(
-        parent,
-        "Define Member Loads",
-        ("id", "element", "load_type", "direction", "w", "p", "a"),
-        [
-            {"key": "id", "label": "Load ID", "default": ""},
-            {"key": "element", "label": "Element", "default": str(element_ids[0]) if element_ids else "", "choices": [str(eid) for eid in element_ids]},
-            {"key": "load_type", "label": "Type", "default": "UDL", "choices": ["UDL", "Point"]},
-            {"key": "direction", "label": "Direction", "default": "local_y", "choices": ["local_y", "local_x"]},
-            {"key": "w", "label": "UDL w", "default": "-10000"},
-            {"key": "p", "label": "Point p", "default": ""},
-            {"key": "a", "label": "Point a", "default": ""},
-        ],
-        lambda: [_member_load_record(record) for record in builder.table_records("member_loads")],
-        lambda values: _save_member_load(builder, values),
-        lambda key: builder.delete_record("member_loads", key),
-        "id",
-        on_change=on_change,
-        help_text="Negative local_y usually means downward load for a horizontal member, depending on local-axis orientation.",
-    )
+    element_id = element_ids[0] if element_ids else ""
+    length = _builder_element_length(builder, element_id) if element_id != "" else None
+    return {
+        "id": "",
+        "element": str(element_id),
+        "load_type": "POINT",
+        "direction": "local_y",
+        "w": "",
+        "p": "",
+        "a": f"{0.5 * length:.6g}" if length is not None else "",
+        "x_start": "0",
+        "x_end": f"{length:.6g}" if length is not None else "",
+    }
 
 
 def open_thermal_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
@@ -316,6 +323,8 @@ def _save_member_load(builder: ModelBuilder, values: dict[str, Any]) -> None:
         w=values.get("w"),
         p=values.get("p"),
         a=values.get("a"),
+        x_start=values.get("x_start"),
+        x_end=values.get("x_end"),
         load_id=load_id,
     )
 
@@ -351,6 +360,21 @@ def _find_element(builder: ModelBuilder, element_id: int) -> dict[str, Any] | No
     return None
 
 
+def _builder_element_length(builder: ModelBuilder, element_id: int | str) -> float | None:
+    if element_id in ("", None):
+        return None
+    element = _find_element(builder, int(element_id))
+    if element is None:
+        return None
+    node_i = builder.nodes.get(int(element["node_i"]))
+    node_j = builder.nodes.get(int(element["node_j"]))
+    if node_i is None or node_j is None:
+        return None
+    dx = float(node_j["x"]) - float(node_i["x"])
+    dy = float(node_j["y"]) - float(node_i["y"])
+    return (dx * dx + dy * dy) ** 0.5
+
+
 def _blank_none(value) -> str:
     return "" if value is None else str(value)
 
@@ -359,6 +383,16 @@ def _optional_float(value) -> float | None:
     if value is None or str(value).strip() == "":
         return None
     return float(value)
+
+
+def _set_widget_value(widget, value: Any) -> None:
+    state = str(widget.cget("state")) if hasattr(widget, "cget") else "normal"
+    if state == "disabled":
+        widget.configure(state="normal")
+    widget.delete(0, tk.END)
+    widget.insert(0, "" if value is None else str(value))
+    if state == "disabled":
+        widget.configure(state="disabled")
 
 
 def _node_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -374,7 +408,7 @@ def _node_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _member_load_record(record: dict[str, Any]) -> dict[str, Any]:
-    load_type = str(record["load_type"]).upper() if str(record["load_type"]).lower() == "udl" else "Point"
+    load_type = str(record["load_type"]).upper() if str(record["load_type"]).lower() == "udl" else "POINT"
     return {
         "id": record["id"],
         "element": record["element"],
@@ -383,7 +417,213 @@ def _member_load_record(record: dict[str, Any]) -> dict[str, Any]:
         "w": _blank_none(record.get("w")),
         "p": _blank_none(record.get("p")),
         "a": _blank_none(record.get("a")),
+        "x_start": _blank_none(record.get("x_start")),
+        "x_end": _blank_none(record.get("x_end")),
     }
+
+
+class _MemberLoadsDialog:
+    columns = ("element", "load_type", "direction", "w", "p", "a", "x_start", "x_end")
+
+    def __init__(self, parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None):
+        self.builder = builder
+        self.on_change = on_change
+        self.entries: dict[str, tk.Entry | ttk.Combobox] = {}
+
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Define Member Loads")
+        self.dialog.transient(parent)
+        self.dialog.resizable(True, True)
+        self.dialog.minsize(900, 500)
+        self.dialog.columnconfigure(0, weight=1)
+        self.dialog.rowconfigure(1, weight=1)
+
+        defaults = member_load_default_values(builder)
+        fields = [
+            ("id", "Load ID", tk.Entry, []),
+            ("element", "Element", ttk.Combobox, [str(eid) for eid in sorted(set(builder.frame_elements) | set(builder.truss_elements))]),
+            ("load_type", "Type", ttk.Combobox, ["POINT", "UDL"]),
+            ("direction", "Direction", ttk.Combobox, ["local_y", "local_x"]),
+            ("w", "UDL w", tk.Entry, []),
+            ("p", "Point P", tk.Entry, []),
+            ("a", "Point a", tk.Entry, []),
+            ("x_start", "UDL x_start", tk.Entry, []),
+            ("x_end", "UDL x_end", tk.Entry, []),
+        ]
+
+        form = tk.Frame(self.dialog, padx=8, pady=8)
+        form.grid(row=0, column=0, sticky="ew")
+        form.columnconfigure(len(fields) - 1, weight=1)
+        tk.Label(
+            form,
+            text="Member Loads: add point or full-span UDL loads to frame elements",
+            font=("TkDefaultFont", 10, "bold"),
+        ).grid(row=0, column=0, columnspan=len(fields), sticky="w", pady=(0, 6))
+        for col, (key, label, widget_cls, choices) in enumerate(fields):
+            tk.Label(form, text=label).grid(row=1, column=col, sticky="w")
+            if widget_cls is ttk.Combobox:
+                widget = ttk.Combobox(form, values=choices, width=11, state="readonly")
+            else:
+                widget = tk.Entry(form, width=11)
+            widget.grid(row=2, column=col, padx=3, pady=3, sticky="ew")
+            self.entries[key] = widget
+            _set_widget_value(widget, defaults.get(key, ""))
+
+        tk.Label(
+            form,
+            text=(
+                "Point load: P at distance a from i-end. UDL: current backend supports full-span only; "
+                "use x_start=0 and x_end=L."
+            ),
+            foreground="#595959",
+            wraplength=920,
+            justify=tk.LEFT,
+        ).grid(row=3, column=0, columnspan=len(fields), sticky="w", pady=(4, 0))
+
+        self.entries["load_type"].bind("<<ComboboxSelected>>", self._on_load_type_changed)
+        self.entries["element"].bind("<<ComboboxSelected>>", self._on_element_changed)
+
+        table_frame = tk.Frame(self.dialog, padx=8, pady=4)
+        table_frame.grid(row=1, column=0, sticky="nsew")
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(table_frame, columns=self.columns, show="headings", height=8)
+        for col in self.columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, width=105, anchor=tk.CENTER)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+
+        buttons = tk.Frame(self.dialog, padx=8, pady=8)
+        buttons.grid(row=2, column=0, sticky="ew")
+        left_buttons = tk.Frame(buttons)
+        left_buttons.pack(side=tk.LEFT)
+        right_buttons = tk.Frame(buttons)
+        right_buttons.pack(side=tk.RIGHT)
+        tk.Button(left_buttons, text="Add", command=self._add).pack(side=tk.LEFT, padx=3)
+        tk.Button(left_buttons, text="Update", command=self._update).pack(side=tk.LEFT, padx=3)
+        tk.Button(left_buttons, text="Delete", command=self._delete).pack(side=tk.LEFT, padx=3)
+        tk.Button(left_buttons, text="Apply", command=self._notify_change).pack(side=tk.LEFT, padx=3)
+        tk.Button(right_buttons, text="OK", command=self._close_ok).pack(side=tk.LEFT, padx=3)
+        tk.Button(right_buttons, text="Cancel", command=self.dialog.destroy).pack(side=tk.LEFT, padx=3)
+
+        self._apply_field_states()
+        self._refresh()
+
+    def _values(self) -> dict[str, Any]:
+        return {key: widget.get().strip() for key, widget in self.entries.items()}
+
+    def _add(self) -> None:
+        values = self._values()
+        values["id"] = ""
+        try:
+            new_id = self.builder.add_member_load(
+                values["element"],
+                values["load_type"],
+                values["direction"],
+                w=values.get("w"),
+                p=values.get("p"),
+                a=values.get("a"),
+                x_start=values.get("x_start"),
+                x_end=values.get("x_end"),
+            )
+        except Exception as exc:
+            messagebox.showerror("Invalid member load", str(exc), parent=self.dialog)
+            return
+        _set_widget_value(self.entries["id"], str(new_id))
+        self._refresh()
+        self._notify_change()
+
+    def _update(self) -> None:
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showerror("No member load selected", "Select a member load row before clicking Update.", parent=self.dialog)
+            return
+        values = self._values()
+        try:
+            self.builder.update_member_load(
+                int(selected[0]),
+                values["element"],
+                values["load_type"],
+                values["direction"],
+                w=values.get("w"),
+                p=values.get("p"),
+                a=values.get("a"),
+                x_start=values.get("x_start"),
+                x_end=values.get("x_end"),
+            )
+        except Exception as exc:
+            messagebox.showerror("Invalid member load", str(exc), parent=self.dialog)
+            return
+        _set_widget_value(self.entries["id"], selected[0])
+        self._refresh()
+        self._notify_change()
+
+    def _delete(self) -> None:
+        selected = self.tree.selection()
+        if not selected:
+            return
+        self.builder.delete_record("member_loads", selected[0])
+        _set_widget_value(self.entries["id"], "")
+        self._refresh()
+        self._notify_change()
+
+    def _close_ok(self) -> None:
+        self._notify_change()
+        self.dialog.destroy()
+
+    def _on_select(self, _event=None) -> None:
+        selected = self.tree.selection()
+        if not selected:
+            return
+        record = self.builder.member_loads.get(int(selected[0]))
+        if not record:
+            return
+        display = _member_load_record(record)
+        for key in ("id", *self.columns):
+            if key in self.entries:
+                _set_widget_value(self.entries[key], display.get(key, ""))
+        self._apply_field_states()
+
+    def _on_load_type_changed(self, _event=None) -> None:
+        self._apply_field_states()
+        self._set_default_distances_for_current_type()
+
+    def _on_element_changed(self, _event=None) -> None:
+        self._set_default_distances_for_current_type(force=True)
+
+    def _apply_field_states(self) -> None:
+        states = get_member_load_field_states(self.entries["load_type"].get())
+        for key, state in states.items():
+            self.entries[key].configure(state=state)
+
+    def _set_default_distances_for_current_type(self, force: bool = False) -> None:
+        length = _builder_element_length(self.builder, self.entries["element"].get())
+        if length is None:
+            return
+        load_type = self.entries["load_type"].get().strip().lower()
+        if load_type == "udl":
+            if force or not self.entries["x_start"].get().strip():
+                _set_widget_value(self.entries["x_start"], "0")
+            if force or not self.entries["x_end"].get().strip():
+                _set_widget_value(self.entries["x_end"], f"{length:.6g}")
+        else:
+            if force or not self.entries["a"].get().strip():
+                _set_widget_value(self.entries["a"], f"{0.5 * length:.6g}")
+
+    def _refresh(self) -> None:
+        self.tree.delete(*self.tree.get_children())
+        for record in [_member_load_record(record) for record in self.builder.table_records("member_loads")]:
+            values = [record.get(col, "") for col in self.columns]
+            self.tree.insert("", tk.END, iid=str(record["id"]), values=values)
+
+    def _notify_change(self) -> None:
+        if self.on_change is not None:
+            self.on_change()
 
 
 class _RecordDialog:
@@ -425,7 +665,7 @@ class _RecordDialog:
             self.entries[spec["key"]] = widget
 
         if help_text:
-            tk.Label(form, text=help_text, foreground="0.35", wraplength=760, justify=tk.LEFT).grid(
+            tk.Label(form, text=help_text, foreground="#595959", wraplength=760, justify=tk.LEFT).grid(
                 row=2,
                 column=0,
                 columnspan=max(1, len(fields)),
