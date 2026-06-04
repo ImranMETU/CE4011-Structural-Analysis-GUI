@@ -13,6 +13,13 @@ from typing import Any, Iterable, Sequence
 import tkinter as tk
 from tkinter import ttk
 
+from postprocessing.drift_results import (
+    compute_roof_displacement,
+    compute_story_drift,
+    format_roof_displacement_rows,
+    format_story_drift_rows,
+)
+
 
 TableRows = list[list[str]]
 
@@ -109,6 +116,33 @@ def format_modal_participation_rows(modal_result: dict[str, Any]) -> tuple[list[
             ]
         )
     return headers, rows
+
+
+def format_static_story_drift_rows(static_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return static story drift table headers and rows."""
+    drift_result = compute_story_drift(static_result, direction="ux", method="mean")
+    _backend_headers, rows = format_story_drift_rows(drift_result)
+    headers = [
+        "Story",
+        "Lower Elevation",
+        "Upper Elevation",
+        "Story Height",
+        "Lower Floor ux",
+        "Upper Floor ux",
+        "Story Drift",
+        "Abs Story Drift",
+        "Drift Ratio",
+        "Abs Drift Ratio",
+    ]
+    return headers, rows
+
+
+def format_static_roof_displacement_rows(static_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return static roof displacement table headers and rows."""
+    roof_result = compute_roof_displacement(static_result, direction="ux", method="max_abs")
+    _backend_headers, rows = format_roof_displacement_rows(roof_result)
+    headers = ["Roof Elevation", "Roof Nodes", "Direction", "Roof Displacement", "Controlling Node"]
+    return headers, [[row[0], row[1], roof_result["direction"], row[2], row[3]] for row in rows]
 
 
 def write_table_csv(path: str | Path, headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> None:

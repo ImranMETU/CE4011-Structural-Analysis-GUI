@@ -59,6 +59,23 @@ def _modal_result():
     }
 
 
+def _drift_static_result():
+    return {
+        "nodes": {
+            1: {"x": 0.0, "y": 0.0},
+            2: {"x": 4.0, "y": 0.0},
+            3: {"x": 0.0, "y": 3.0},
+            4: {"x": 4.0, "y": 3.0},
+        },
+        "displacements": {
+            1: {"ux": 0.0, "uy": 0.0, "rz": 0.0},
+            2: {"ux": 0.0, "uy": 0.0, "rz": 0.0},
+            3: {"ux": 0.03, "uy": 0.0, "rz": 0.0},
+            4: {"ux": 0.036, "uy": 0.0, "rz": 0.0},
+        },
+    }
+
+
 def test_result_table_helper_module_imports_successfully():
     import gui.result_tables as tables
 
@@ -96,6 +113,31 @@ def test_modal_result_formatters_return_expected_headers_and_rows():
     assert freq_rows[0] == ["1", "2.000000e+00", "3.183099e-01", "3.141593e+00"]
     assert part_headers == ["Mode", "Gamma", "Effective Modal Mass", "Effective Mass Ratio"]
     assert part_rows[0] == ["1", "1.250000e+00", "5.000000e+01", "5.000000e-01"]
+
+
+def test_drift_result_formatters_return_expected_headers_and_rows():
+    from gui.result_tables import format_static_roof_displacement_rows, format_static_story_drift_rows
+
+    drift_headers, drift_rows = format_static_story_drift_rows(_drift_static_result())
+    roof_headers, roof_rows = format_static_roof_displacement_rows(_drift_static_result())
+
+    assert drift_headers == [
+        "Story",
+        "Lower Elevation",
+        "Upper Elevation",
+        "Story Height",
+        "Lower Floor ux",
+        "Upper Floor ux",
+        "Story Drift",
+        "Abs Story Drift",
+        "Drift Ratio",
+        "Abs Drift Ratio",
+    ]
+    assert drift_rows[0][0] == "1"
+    assert drift_rows[0][6] == "3.300000e-02"
+    assert roof_headers == ["Roof Elevation", "Roof Nodes", "Direction", "Roof Displacement", "Controlling Node"]
+    assert roof_rows[0][2] == "ux"
+    assert roof_rows[0][3] == "3.600000e-02"
 
 
 def test_table_csv_writer_writes_headers_and_rows(tmp_path):

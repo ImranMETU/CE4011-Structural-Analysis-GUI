@@ -53,12 +53,24 @@ from gui.result_tables import (  # noqa: E402
     format_modal_participation_rows,
     format_nodal_displacement_rows,
     format_reaction_rows,
+    format_static_roof_displacement_rows,
+    format_static_story_drift_rows,
     open_table_window,
     write_table_csv,
 )
 from model.structure import Structure  # noqa: E402
 from postprocessing.modal_results import package_modal_results  # noqa: E402
 from postprocessing.static_results import run_static_analysis  # noqa: E402
+from postprocessing.drift_results import (  # noqa: E402
+    compute_floor_displacements,
+    compute_roof_displacement,
+    compute_story_drift,
+)
+from visualization.drift_plots import (  # noqa: E402
+    plot_drift_ratio_profile,
+    plot_floor_displacement_profile,
+    plot_story_drift_profile,
+)
 from visualization.model_view import plot_model_view  # noqa: E402
 from visualization.modal_plots import (  # noqa: E402
     plot_modal_frequencies,
@@ -84,6 +96,9 @@ PLOT_TYPES = (
     "Axial Force Diagram",
     "Shear Force Diagram",
     "Bending Moment Diagram",
+    "Story Drift Profile",
+    "Drift Ratio Profile",
+    "Floor Displacement Profile",
     "Mode 1",
     "Mode 2",
     "Mode 3",
@@ -111,6 +126,12 @@ STATIC_PLOT_TYPES = {
 MODEL_VIEW_TYPES = {
     "Model View",
     "Presentation Model View",
+}
+
+DRIFT_PLOT_TYPES = {
+    "Story Drift Profile",
+    "Drift Ratio Profile",
+    "Floor Displacement Profile",
 }
 
 MODAL_PLOT_TYPES = {
@@ -259,6 +280,9 @@ class StaticAnalysisApp:
             "Axial Force Diagram",
             "Shear Force Diagram",
             "Bending Moment Diagram",
+            "Story Drift Profile",
+            "Drift Ratio Profile",
+            "Floor Displacement Profile",
         ):
             static_menu.add_command(label=name, command=lambda plot=name: self.select_plot_type(plot))
         modal_menu = tk.Menu(display_menu, tearoff=False)
@@ -272,6 +296,9 @@ class StaticAnalysisApp:
         tables_menu.add_command(label="Nodal Displacements", command=self.show_nodal_displacements_table)
         tables_menu.add_command(label="Support Reactions", command=self.show_support_reactions_table)
         tables_menu.add_command(label="Member-End Forces", command=self.show_member_end_forces_table)
+        tables_menu.add_separator()
+        tables_menu.add_command(label="Story Drift Table", command=self.show_story_drift_table)
+        tables_menu.add_command(label="Roof Displacement", command=self.show_roof_displacement_table)
         tables_menu.add_separator()
         tables_menu.add_command(label="Modal Frequencies", command=self.show_modal_frequencies_table)
         tables_menu.add_command(label="Modal Participation Factors", command=self.show_modal_participation_table)
@@ -620,7 +647,11 @@ class StaticAnalysisApp:
         try:
             self.static_result = run_static_analysis(self.model_data)
             self.current_table = None
-            if self.plot_type.get() not in STATIC_PLOT_TYPES and self.plot_type.get() not in MODEL_VIEW_TYPES:
+            if (
+                self.plot_type.get() not in STATIC_PLOT_TYPES
+                and self.plot_type.get() not in MODEL_VIEW_TYPES
+                and self.plot_type.get() not in DRIFT_PLOT_TYPES
+            ):
                 self.plot_type.set("Geometry")
             self._redraw_current_plot()
             self._update_summary()
@@ -692,6 +723,10 @@ class StaticAnalysisApp:
             messagebox.showerror("No static results", "Run static analysis before selecting a static result plot.")
             self.plot_type.set("Geometry")
             return
+        if plot_name in DRIFT_PLOT_TYPES and self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis before opening drift results.")
+            self.plot_type.set("Geometry")
+            return
         if plot_name in MODAL_PLOT_TYPES and self.modal_result is None:
             messagebox.showerror("No modal results", "Run modal analysis before selecting a modal result plot.")
             self.plot_type.set("Geometry")
@@ -723,6 +758,10 @@ class StaticAnalysisApp:
             if plot_name != "Geometry":
                 kwargs["scale"] = self._static_plot_scale(plot_name)
             plot_func(self.static_result, **kwargs)
+        elif plot_name in DRIFT_PLOT_TYPES:
+            if self.static_result is None:
+                return
+            self._draw_drift_plot(plot_name)
         elif plot_name in MODAL_PLOT_TYPES:
             if self.modal_result is None:
                 return
@@ -752,6 +791,18 @@ class StaticAnalysisApp:
             plot_modal_periods(self.modal_result, ax=self.ax)
         else:
             raise ValueError(f"Unknown modal plot type: {plot_name}")
+
+    def _draw_drift_plot(self, plot_name: str) -> None:
+        if self.static_result is None:
+            return
+        if plot_name == "Story Drift Profile":
+            plot_story_drift_profile(self._current_story_drift(), ax=self.ax)
+        elif plot_name == "Drift Ratio Profile":
+            plot_drift_ratio_profile(self._current_story_drift(), ax=self.ax)
+        elif plot_name == "Floor Displacement Profile":
+            plot_floor_displacement_profile(self._current_floor_displacements(), ax=self.ax)
+        else:
+            raise ValueError(f"Unknown drift plot type: {plot_name}")
 
     def _static_plot_scale(self, plot_name: str) -> float:
         if plot_name == "Deformed Shape":
@@ -799,6 +850,7 @@ class StaticAnalysisApp:
                         f"Member-force records: {len(self.static_result['member_end_forces'])}",
                     ]
                 )
+                lines.extend(self._drift_summary_lines())
             else:
                 lines.extend(["", "Static analysis: not run"])
 
@@ -819,6 +871,48 @@ class StaticAnalysisApp:
     def _show_error(self, title: str, exc: Exception) -> None:
         detail = "".join(traceback.format_exception_only(type(exc), exc)).strip()
         messagebox.showerror(title, detail)
+
+    def _current_floor_displacements(self) -> dict[str, Any]:
+        self._validate_drift_ready()
+        return compute_floor_displacements(self.static_result, direction="ux", method="mean")
+
+    def _current_story_drift(self) -> dict[str, Any]:
+        self._validate_drift_ready()
+        drift = compute_story_drift(self.static_result, direction="ux", method="mean")
+        if not drift.get("stories"):
+            raise ValueError("At least two floor levels are required for story drift results.")
+        return drift
+
+    def _current_roof_displacement(self) -> dict[str, Any]:
+        self._validate_drift_ready()
+        return compute_roof_displacement(self.static_result, direction="ux", method="max_abs")
+
+    def _validate_drift_ready(self) -> None:
+        if self.static_result is None:
+            raise ValueError("Run static analysis before opening drift results.")
+        if not self.static_result.get("nodes"):
+            raise ValueError("No node coordinates are available for drift results.")
+        if not self.static_result.get("displacements"):
+            raise ValueError("No displacement data are available for drift results.")
+
+    def _drift_summary_lines(self) -> list[str]:
+        if self.static_result is None or self.plot_type.get() not in DRIFT_PLOT_TYPES:
+            return []
+        try:
+            drift = self._current_story_drift()
+            roof = self._current_roof_displacement()
+        except Exception as exc:
+            return ["", f"Drift summary unavailable: {exc}"]
+
+        max_story = max(drift["stories"], key=lambda story: story["abs_story_drift"])
+        max_ratio = max(drift["stories"], key=lambda story: story["abs_drift_ratio"])
+        return [
+            "",
+            "Drift summary:",
+            f"Max |story drift|: {max_story['abs_story_drift']:.6e} (Story {max_story['story']})",
+            f"Max |drift ratio|: {max_ratio['abs_drift_ratio']:.6e} (Story {max_ratio['story']})",
+            f"Roof ux: {roof['roof_displacement']:.6e}",
+        ]
 
     def _connect_selection_events(self) -> None:
         if self.canvas is None:
@@ -1039,7 +1133,7 @@ class StaticAnalysisApp:
         return nodes, elements
 
     def _selection_supported_plot(self) -> bool:
-        return self.plot_type.get() not in {"Modal Frequencies", "Modal Periods"}
+        return self.plot_type.get() not in {"Modal Frequencies", "Modal Periods"} | DRIFT_PLOT_TYPES
 
     def _update_selection_panel(self) -> None:
         if self.selection_text is None:
@@ -1172,6 +1266,30 @@ class StaticAnalysisApp:
             return
         headers, rows = format_member_force_rows(self.static_result)
         self._open_result_table("Member-End Forces", headers, rows)
+
+    def show_story_drift_table(self) -> None:
+        if self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis before opening drift results.")
+            return
+        try:
+            self._current_story_drift()
+            headers, rows = format_static_story_drift_rows(self.static_result)
+        except Exception as exc:
+            self._show_error("Story drift table failed", exc)
+            return
+        self._open_result_table("Story Drift Table", headers, rows)
+
+    def show_roof_displacement_table(self) -> None:
+        if self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis before opening drift results.")
+            return
+        try:
+            self._current_roof_displacement()
+            headers, rows = format_static_roof_displacement_rows(self.static_result)
+        except Exception as exc:
+            self._show_error("Roof displacement table failed", exc)
+            return
+        self._open_result_table("Roof Displacement", headers, rows)
 
     def show_modal_frequencies_table(self) -> None:
         if self.modal_result is None:
