@@ -48,6 +48,9 @@ def parse_text_model(text: str) -> tuple[dict[str, Any], dict[int, dict[str, flo
         elif keyword == "THERMAL":
             element_id, load = _parse_thermal(args, line_no)
             _attach_thermal_load(data["elements"], element_id, load, line_no)
+        elif keyword == "MEMBER_LOAD":
+            element_id, load = _parse_member_load(args, line_no)
+            _attach_member_load(data, element_id, load, line_no)
         elif keyword == "SETTLEMENT":
             node_id, prescribed = _parse_settlement(args, line_no)
             _attach_settlement(data["nodes"], node_id, prescribed, line_no)
@@ -150,6 +153,30 @@ def _parse_thermal(args: list[str], line_no: int) -> tuple[int, dict[str, float 
     return int(args[0]), load
 
 
+def _parse_member_load(args: list[str], line_no: int) -> tuple[int, dict[str, float | str]]:
+    _require_len(args, 1, line_no, "MEMBER_LOAD element_id TYPE=UDL DIR=LOCAL_Y W=...")
+    props = _key_values(args[1:], line_no)
+    load_type = props.get("TYPE", "").strip().lower()
+    direction = props.get("DIR", "LOCAL_Y").strip().lower()
+
+    if load_type not in {"udl", "point"}:
+        raise ValueError(f"Line {line_no}: MEMBER_LOAD TYPE must be UDL or POINT.")
+    if direction not in {"local_y", "local_x"}:
+        raise ValueError(f"Line {line_no}: MEMBER_LOAD DIR must be LOCAL_Y or LOCAL_X.")
+
+    load: dict[str, float | str] = {"type": load_type, "direction": direction}
+    if load_type == "udl":
+        if "W" not in props:
+            raise ValueError(f"Line {line_no}: UDL MEMBER_LOAD requires W=.")
+        load["w"] = float(props["W"])
+    else:
+        if "P" not in props or "A" not in props:
+            raise ValueError(f"Line {line_no}: POINT MEMBER_LOAD requires P= and A=.")
+        load["p"] = float(props["P"])
+        load["a"] = float(props["A"])
+    return int(args[0]), load
+
+
 def _parse_settlement(args: list[str], line_no: int) -> tuple[int, dict[str, float]]:
     _require_len(args, 1, line_no, "SETTLEMENT node_id UX=... UY=... RZ=...")
     props = _key_values(args[1:], line_no)
@@ -168,12 +195,44 @@ def _attach_thermal_load(elements: list[dict[str, Any]], element_id: int, load: 
     raise ValueError(f"Line {line_no}: THERMAL references unknown element id {element_id}.")
 
 
+def _attach_member_load(data: dict[str, Any], element_id: int, load: dict[str, Any], line_no: int) -> None:
+    element = _find_element(data["elements"], element_id)
+    if element is None:
+        raise ValueError(f"Line {line_no}: MEMBER_LOAD references unknown element id {element_id}.")
+    if element.get("type", "").lower() == "truss" and str(load.get("direction", "")).lower() == "local_y":
+        raise ValueError(f"Line {line_no}: transverse local_y member loads are only supported for frame elements.")
+    if str(load.get("type", "")).lower() == "point":
+        length = _element_length(data["nodes"], element)
+        a = float(load["a"])
+        if length is not None and (a < 0.0 or a > length):
+            raise ValueError(f"Line {line_no}: point load location a must satisfy 0 <= a <= L ({length:.6g}).")
+    element.setdefault("member_loads", []).append(load)
+
+
 def _attach_settlement(nodes: list[dict[str, Any]], node_id: int, prescribed: dict[str, float], line_no: int) -> None:
     for node in nodes:
         if int(node["id"]) == int(node_id):
             node["prescribed_displacements"] = prescribed
             return
     raise ValueError(f"Line {line_no}: SETTLEMENT references unknown node id {node_id}.")
+
+
+def _find_element(elements: list[dict[str, Any]], element_id: int) -> dict[str, Any] | None:
+    for element in elements:
+        if int(element["id"]) == int(element_id):
+            return element
+    return None
+
+
+def _element_length(nodes: list[dict[str, Any]], element: dict[str, Any]) -> float | None:
+    by_id = {int(node["id"]): node for node in nodes}
+    node_i = by_id.get(int(element["node_i"]))
+    node_j = by_id.get(int(element["node_j"]))
+    if node_i is None or node_j is None:
+        return None
+    dx = float(node_j["x"]) - float(node_i["x"])
+    dy = float(node_j["y"]) - float(node_i["y"])
+    return (dx * dx + dy * dy) ** 0.5
 
 
 def _key_values(tokens: list[str], line_no: int) -> dict[str, str]:

@@ -16,6 +16,7 @@ DEFAULT_OPTIONS = {
     "show_node_labels": True,
     "show_element_labels": True,
     "show_loads": True,
+    "show_member_loads": True,
     "show_supports": True,
     "show_settlements": True,
     "show_thermal": True,
@@ -56,6 +57,8 @@ def plot_model_view(result_or_model: dict[str, Any], ax=None, options: dict[str,
         _draw_supports(ax, nodes, offset)
     if opts["show_loads"]:
         _draw_nodal_loads(ax, nodes, result_or_model.get("nodal_loads", []), span)
+    if opts["show_member_loads"]:
+        _draw_member_loads(ax, nodes, elements, offset)
     if opts["show_settlements"]:
         _draw_settlements(ax, nodes, offset)
     if opts["show_thermal_loads"]:
@@ -214,6 +217,86 @@ def _draw_thermal_loads(ax, nodes: dict[int, dict[str, Any]], elements: dict[int
         )
 
 
+def _draw_member_loads(ax, nodes: dict[int, dict[str, Any]], elements: dict[int, dict[str, Any]], offset: float) -> None:
+    for element in elements.values():
+        loads = [
+            load
+            for load in element.get("member_loads", [])
+            if str(load.get("type", "")).lower() in {"udl", "point"}
+        ]
+        if not loads:
+            continue
+        node_i = nodes.get(int(element["node_i"]))
+        node_j = nodes.get(int(element["node_j"]))
+        if node_i is None or node_j is None:
+            continue
+        for index, load in enumerate(loads):
+            try:
+                _draw_one_member_load(ax, node_i, node_j, load, offset, index)
+            except (TypeError, ValueError, KeyError):
+                continue
+
+
+def _draw_one_member_load(
+    ax,
+    node_i: dict[str, Any],
+    node_j: dict[str, Any],
+    load: dict[str, Any],
+    offset: float,
+    index: int,
+) -> None:
+    xi, yi = float(node_i["x"]), float(node_i["y"])
+    xj, yj = float(node_j["x"]), float(node_j["y"])
+    length = ((xj - xi) ** 2 + (yj - yi) ** 2) ** 0.5
+    if length <= 0.0:
+        return
+    tx = (xj - xi) / length
+    ty = (yj - yi) / length
+    nx = -ty
+    ny = tx
+    load_type = str(load.get("type", "")).lower()
+    direction = str(load.get("direction", "local_y")).lower()
+    dir_x, dir_y = (nx, ny) if direction == "local_y" else (tx, ty)
+
+    label_shift = (2.2 + index) * offset
+    if load_type == "udl":
+        w = float(load["w"])
+        sign = _sign(w)
+        label = f"UDL w={w:.3g}"
+        for fraction in (0.25, 0.5, 0.75):
+            bx = xi + fraction * (xj - xi)
+            by = yi + fraction * (yj - yi)
+            _arrow(ax, bx - sign * dir_x * offset, by - sign * dir_y * offset, sign * dir_x * offset, sign * dir_y * offset, "tab:brown")
+        ax.text(
+            0.5 * (xi + xj) + nx * label_shift,
+            0.5 * (yi + yj) + ny * label_shift,
+            label,
+            color="tab:brown",
+            fontsize=8,
+            ha="center",
+            va="center",
+            zorder=36,
+        )
+    elif load_type == "point":
+        p = float(load["p"])
+        a = float(load["a"])
+        fraction = max(0.0, min(1.0, a / length))
+        bx = xi + fraction * (xj - xi)
+        by = yi + fraction * (yj - yi)
+        sign = _sign(p)
+        _arrow(ax, bx - sign * dir_x * 1.8 * offset, by - sign * dir_y * 1.8 * offset, sign * dir_x * 1.8 * offset, sign * dir_y * 1.8 * offset, "tab:brown")
+        ax.text(
+            bx + nx * label_shift,
+            by + ny * label_shift,
+            f"P={p:.3g} @ a={a:.3g}",
+            color="tab:brown",
+            fontsize=8,
+            ha="center",
+            va="center",
+            zorder=36,
+        )
+
+
 def _draw_modal_masses(ax, nodes: dict[int, dict[str, Any]], mass_mapping: dict[int, dict[str, float]], offset: float) -> None:
     for node_id, masses in sorted((mass_mapping or {}).items()):
         node = nodes.get(int(node_id))
@@ -299,6 +382,7 @@ def _draw_legend(ax) -> None:
         Line2D([0], [0], color="black", linewidth=1.2, linestyle="--", label="Truss element"),
         Line2D([0], [0], marker="o", color="black", markerfacecolor="white", linestyle="", label="Node / node label"),
         Line2D([0], [0], color="tab:blue", linestyle="", marker="$E$", label="Element label"),
+        Line2D([0], [0], color="tab:brown", linewidth=1.4, label="Member load"),
         Line2D([0], [0], color="tab:orange", linestyle="", marker="$T$", label="Thermal load"),
         Line2D([0], [0], color="tab:purple", linewidth=1.4, label="Settlement"),
         Patch(facecolor="0.25", edgecolor="0.15", label="Support"),

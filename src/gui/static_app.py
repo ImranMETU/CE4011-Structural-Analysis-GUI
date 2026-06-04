@@ -32,6 +32,7 @@ from gui.input_dialogs import (  # noqa: E402
     open_analysis_options_dialog,
     open_frame_elements_dialog,
     open_materials_dialog,
+    open_member_loads_dialog,
     open_modal_masses_dialog,
     open_nodal_loads_dialog,
     open_nodes_dialog,
@@ -43,6 +44,7 @@ from gui.input_dialogs import (  # noqa: E402
 from gui.interactive_selection import (  # noqa: E402
     pick_element,
     pick_node,
+    safe_remove_artist,
     select_elements_in_rectangle,
     select_nodes_in_rectangle,
 )
@@ -151,6 +153,8 @@ DEFAULT_TEXT_MODEL = """# CE4011 text model input deck
 # TRUSS id node_i node_j material section
 # LOAD node_id FX=0 FY=0 MZ=0
 # THERMAL element_id T_UNIFORM=50
+# MEMBER_LOAD element_id TYPE=UDL DIR=LOCAL_Y W=-10000
+# MEMBER_LOAD element_id TYPE=POINT DIR=LOCAL_Y P=-20000 A=2.5
 # SETTLEMENT node_id UX=0 UY=-0.002 RZ=0
 # MASS node_id UX=10000 UY=0 RZ=0
 
@@ -176,6 +180,8 @@ TRUSS id node_i node_j material section
 LOAD node_id FX=10000 FY=0 MZ=0
 THERMAL element_id T_UNIFORM=50
 THERMAL element_id T_TOP=0 T_BOTTOM=50
+MEMBER_LOAD element_id TYPE=UDL DIR=LOCAL_Y W=-10000
+MEMBER_LOAD element_id TYPE=POINT DIR=LOCAL_Y P=-20000 A=2.5
 SETTLEMENT node_id UX=0 UY=-0.002 RZ=0
 MASS node_id UX=10000 UY=0 RZ=0
 
@@ -257,6 +263,7 @@ class StaticAnalysisApp:
         define_menu.add_command(label="Truss Elements", command=self.define_truss_elements)
         define_menu.add_command(label="Generate Frame Model", command=self.define_generate_frame_model)
         define_menu.add_command(label="Nodal Loads", command=self.define_nodal_loads)
+        define_menu.add_command(label="Member Loads", command=self.define_member_loads)
         define_menu.add_command(label="Thermal Loads", command=self.define_thermal_loads)
         define_menu.add_command(label="Support Settlements", command=self.define_support_settlements)
         define_menu.add_command(label="Modal Masses", command=self.define_modal_masses)
@@ -760,6 +767,7 @@ class StaticAnalysisApp:
             self._show_error("Plot update failed", exc)
 
     def _redraw_current_plot(self) -> None:
+        self._reset_selection_overlay_references()
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
 
@@ -847,6 +855,7 @@ class StaticAnalysisApp:
         return PLOT_SCALES.get(plot_name, 1.0)
 
     def _draw_empty_canvas(self) -> None:
+        self._reset_selection_overlay_references()
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
         self.ax.set_title("Load a model and run static or modal analysis")
@@ -877,6 +886,8 @@ class StaticAnalysisApp:
                         "Static analysis: run",
                         f"Nodes: {len(self.static_result['nodes'])}",
                         f"Elements: {len(self.static_result['elements'])}",
+                        f"Nodal load records: {len(self.model_data.get('nodal_loads', [])) if self.model_data else 0}",
+                        f"Member load records: {self._mechanical_member_load_count()}",
                         f"Thermal load records: {self._thermal_load_count()}",
                         f"Support settlement records: {self._settlement_count()}",
                         f"Thermal/settlement included: {'yes' if self._thermal_load_count() or self._settlement_count() else 'no'}",
@@ -895,6 +906,8 @@ class StaticAnalysisApp:
                         [
                             f"Nodes: {len(nodes)}",
                             f"Elements: {len(elements)}",
+                            f"Nodal load records: {len(self.model_data.get('nodal_loads', []))}",
+                            f"Member load records: {self._mechanical_member_load_count()}",
                             f"Thermal load records: {self._thermal_load_count()}",
                             f"Support settlement records: {self._settlement_count()}",
                         ]
@@ -1175,21 +1188,18 @@ class StaticAnalysisApp:
 
     def _clear_selection_artists(self) -> None:
         for artist in self._selection_artists:
-            try:
-                artist.remove()
-            except ValueError:
-                pass
+            safe_remove_artist(artist)
         self._selection_artists = []
 
     def _remove_selection_rectangle(self, draw: bool = True) -> None:
-        if self._selection_rect_artist is not None:
-            try:
-                self._selection_rect_artist.remove()
-            except ValueError:
-                pass
+        safe_remove_artist(self._selection_rect_artist)
         self._selection_rect_artist = None
         if draw and self.canvas is not None:
             self.canvas.draw_idle()
+
+    def _reset_selection_overlay_references(self) -> None:
+        self._selection_artists = []
+        self._selection_rect_artist = None
 
     def _selection_tolerance(self) -> float:
         x0, x1 = self.ax.get_xlim()
@@ -1480,7 +1490,22 @@ class StaticAnalysisApp:
     def _thermal_load_count(self) -> int:
         if self.model_data is None:
             return 0
-        return sum(len(element.get("member_loads", [])) for element in self.model_data.get("elements", []))
+        return sum(
+            1
+            for element in self.model_data.get("elements", [])
+            for load in element.get("member_loads", [])
+            if str(load.get("type", "")).lower() == "thermal"
+        )
+
+    def _mechanical_member_load_count(self) -> int:
+        if self.model_data is None:
+            return 0
+        return sum(
+            1
+            for element in self.model_data.get("elements", [])
+            for load in element.get("member_loads", [])
+            if str(load.get("type", "")).lower() in {"udl", "point"}
+        )
 
     def _settlement_count(self) -> int:
         if self.model_data is None:
@@ -1520,6 +1545,10 @@ class StaticAnalysisApp:
     def define_nodal_loads(self) -> None:
         self._ensure_form_source()
         open_nodal_loads_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
+
+    def define_member_loads(self) -> None:
+        self._ensure_form_source()
+        open_member_loads_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
     def define_thermal_loads(self) -> None:
         self._ensure_form_source()
@@ -1567,6 +1596,7 @@ class StaticAnalysisApp:
                     f"Sections: {len(self.model_data.get('sections', []))}",
                     f"Elements: {len(self.model_data.get('elements', []))}",
                     f"Nodal loads: {len(self.model_data.get('nodal_loads', []))}",
+                    f"Member loads: {self._mechanical_member_load_count()}",
                     f"Thermal loads: {self._thermal_load_count()}",
                     f"Support settlements: {self._settlement_count()}",
                     f"Text MASS records: {mass_count}",

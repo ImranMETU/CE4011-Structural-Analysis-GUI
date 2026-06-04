@@ -102,6 +102,30 @@ def open_nodal_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[
     )
 
 
+def open_member_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
+    element_ids = sorted(set(builder.frame_elements) | set(builder.truss_elements))
+    _RecordDialog(
+        parent,
+        "Define Member Loads",
+        ("id", "element", "load_type", "direction", "w", "p", "a"),
+        [
+            {"key": "id", "label": "Load ID", "default": ""},
+            {"key": "element", "label": "Element", "default": str(element_ids[0]) if element_ids else "", "choices": [str(eid) for eid in element_ids]},
+            {"key": "load_type", "label": "Type", "default": "UDL", "choices": ["UDL", "Point"]},
+            {"key": "direction", "label": "Direction", "default": "local_y", "choices": ["local_y", "local_x"]},
+            {"key": "w", "label": "UDL w", "default": "-10000"},
+            {"key": "p", "label": "Point p", "default": ""},
+            {"key": "a", "label": "Point a", "default": ""},
+        ],
+        lambda: [_member_load_record(record) for record in builder.table_records("member_loads")],
+        lambda values: _save_member_load(builder, values),
+        lambda key: builder.delete_record("member_loads", key),
+        "id",
+        on_change=on_change,
+        help_text="Negative local_y usually means downward load for a horizontal member, depending on local-axis orientation.",
+    )
+
+
 def open_thermal_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _RecordDialog(
         parent,
@@ -283,6 +307,19 @@ def _save_thermal_load(parent, builder: ModelBuilder, values: dict[str, Any]) ->
     )
 
 
+def _save_member_load(builder: ModelBuilder, values: dict[str, Any]) -> None:
+    load_id = values.get("id") or None
+    builder.add_member_load(
+        values["element"],
+        values["load_type"],
+        values.get("direction", "local_y"),
+        w=values.get("w"),
+        p=values.get("p"),
+        a=values.get("a"),
+        load_id=load_id,
+    )
+
+
 def _save_support_settlement(parent, builder: ModelBuilder, values: dict[str, Any]) -> None:
     node_id = int(values["node"])
     node = builder.nodes.get(node_id)
@@ -336,6 +373,19 @@ def _node_record(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _member_load_record(record: dict[str, Any]) -> dict[str, Any]:
+    load_type = str(record["load_type"]).upper() if str(record["load_type"]).lower() == "udl" else "Point"
+    return {
+        "id": record["id"],
+        "element": record["element"],
+        "load_type": load_type,
+        "direction": record["direction"],
+        "w": _blank_none(record.get("w")),
+        "p": _blank_none(record.get("p")),
+        "a": _blank_none(record.get("a")),
+    }
+
+
 class _RecordDialog:
     def __init__(
         self,
@@ -348,6 +398,7 @@ class _RecordDialog:
         delete_func: Callable[[str], None],
         key_field: str,
         on_change: Callable[[], None] | None = None,
+        help_text: str | None = None,
     ):
         self.records_func = records_func
         self.save_func = save_func
@@ -372,6 +423,15 @@ class _RecordDialog:
             widget.insert(0, spec.get("default", ""))
             widget.grid(row=1, column=col, padx=3, pady=3)
             self.entries[spec["key"]] = widget
+
+        if help_text:
+            tk.Label(form, text=help_text, foreground="0.35", wraplength=760, justify=tk.LEFT).grid(
+                row=2,
+                column=0,
+                columnspan=max(1, len(fields)),
+                sticky="w",
+                pady=(4, 0),
+            )
 
         self.tree = ttk.Treeview(self.dialog, columns=columns, show="headings", height=8)
         for col in columns:

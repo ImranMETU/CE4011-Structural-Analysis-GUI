@@ -28,6 +28,8 @@ class ModelBuilder:
         self.frame_elements: dict[int, dict[str, Any]] = {}
         self.truss_elements: dict[int, dict[str, Any]] = {}
         self.nodal_loads: dict[int, dict[str, Any]] = {}
+        self.member_loads: dict[int, dict[str, Any]] = {}
+        self._next_member_load_id = 1
         self.thermal_loads: dict[int, dict[str, Any]] = {}
         self.support_settlements: dict[int, dict[str, float | None]] = {}
         self.modal_masses: dict[int, dict[str, float]] = {}
@@ -72,6 +74,50 @@ class ModelBuilder:
             "fy": float(fy),
             "mz": float(mz),
         }
+
+    def add_member_load(
+        self,
+        element_id: int,
+        load_type: str,
+        direction: str = "local_y",
+        w: float | str | None = None,
+        p: float | str | None = None,
+        a: float | str | None = None,
+        load_id: int | None = None,
+    ) -> int:
+        """Add or update a mechanical UDL/point member load."""
+        load_id = int(load_id) if load_id not in (None, "") else self._allocate_member_load_id()
+        payload = self._member_load_payload(element_id, load_type, direction, w=w, p=p, a=a)
+        record = {
+            "id": load_id,
+            "element": int(element_id),
+            "load_type": str(load_type),
+            "direction": str(direction).strip().lower(),
+            "w": payload.get("w"),
+            "p": payload.get("p"),
+            "a": payload.get("a"),
+            "payload": payload,
+        }
+        self.member_loads[load_id] = record
+        self._next_member_load_id = max(self._next_member_load_id, load_id + 1)
+        return load_id
+
+    def update_member_load(
+        self,
+        load_id: int,
+        element_id: int,
+        load_type: str,
+        direction: str = "local_y",
+        w: float | str | None = None,
+        p: float | str | None = None,
+        a: float | str | None = None,
+    ) -> None:
+        if int(load_id) not in self.member_loads:
+            raise ValueError(f"Unknown member load id {load_id}.")
+        self.add_member_load(element_id, load_type, direction, w=w, p=p, a=a, load_id=int(load_id))
+
+    def get_member_loads(self) -> list[dict[str, Any]]:
+        return self.table_records("member_loads")
 
     def add_thermal_load(
         self,
@@ -157,6 +203,8 @@ class ModelBuilder:
 
         elements = self.table_records("frame_elements") + self.table_records("truss_elements")
         by_element = {element["id"]: element for element in elements}
+        for load in self.table_records("member_loads"):
+            by_element[load["element"]].setdefault("member_loads", []).append(deepcopy(load["payload"]))
         for element_id, load in self.thermal_loads.items():
             by_element[element_id].setdefault("member_loads", []).append(deepcopy(load["payload"]))
 
@@ -209,7 +257,8 @@ class ModelBuilder:
                     element["id"], element["node_i"], element["node_j"], element["material"], element["section"]
                 )
             for load in element.get("member_loads", []):
-                if str(load.get("type", "")).lower() == "thermal":
+                load_type = str(load.get("type", "")).lower()
+                if load_type == "thermal":
                     if "delta_T" in load:
                         self.add_thermal_load(
                             element["id"],
@@ -226,6 +275,15 @@ class ModelBuilder:
                             load.get("T_top"),
                             load.get("T_bottom"),
                         )
+                elif load_type in {"udl", "point"}:
+                    self.add_member_load(
+                        element["id"],
+                        load_type,
+                        load.get("direction", "local_y"),
+                        w=load.get("w"),
+                        p=load.get("p"),
+                        a=load.get("a"),
+                    )
         for load in data.get("nodal_loads", []):
             self.add_nodal_load(load["node"], load.get("fx", 0.0), load.get("fy", 0.0), load.get("mz", 0.0))
         if mass_mapping:
@@ -240,6 +298,7 @@ class ModelBuilder:
             f"Frame elements: {len(self.frame_elements)}",
             f"Truss elements: {len(self.truss_elements)}",
             f"Nodal loads: {len(self.nodal_loads)}",
+            f"Member loads: {len(self.member_loads)}",
             f"Thermal loads: {len(self.thermal_loads)}",
             f"Support settlements: {len(self.support_settlements)}",
             f"Modal masses: {len(self.modal_masses)}",
@@ -258,6 +317,8 @@ class ModelBuilder:
             return self.truss_elements
         if table == "nodal_loads":
             return self.nodal_loads
+        if table == "member_loads":
+            return self.member_loads
         if table == "thermal_loads":
             return self.thermal_loads
         if table == "support_settlements":
@@ -273,6 +334,71 @@ class ModelBuilder:
     def _require_element(self, element_id: int) -> None:
         if int(element_id) not in self.frame_elements and int(element_id) not in self.truss_elements:
             raise ValueError(f"Unknown element id {element_id}.")
+
+    def _allocate_member_load_id(self) -> int:
+        while self._next_member_load_id in self.member_loads:
+            self._next_member_load_id += 1
+        load_id = self._next_member_load_id
+        self._next_member_load_id += 1
+        return load_id
+
+    def _member_load_payload(
+        self,
+        element_id: int,
+        load_type: str,
+        direction: str,
+        w: float | str | None = None,
+        p: float | str | None = None,
+        a: float | str | None = None,
+    ) -> dict[str, float | str]:
+        element = self.validate_member_load_reference(element_id, load_type, direction)
+        load_type_norm = str(load_type).strip().lower()
+        direction_norm = str(direction).strip().lower()
+        if load_type_norm == "udl":
+            if w is None or str(w).strip() == "":
+                raise ValueError("UDL member load requires w.")
+            return {"type": "udl", "direction": direction_norm, "w": float(w)}
+        if load_type_norm == "point":
+            if p is None or str(p).strip() == "":
+                raise ValueError("Point member load requires p.")
+            if a is None or str(a).strip() == "":
+                raise ValueError("Point member load requires a.")
+            a_value = float(a)
+            length = self._element_length(element)
+            if length is not None and (a_value < 0.0 or a_value > length):
+                raise ValueError(f"Point load location a must satisfy 0 <= a <= L ({length:.6g}).")
+            return {"type": "point", "direction": direction_norm, "p": float(p), "a": a_value}
+        raise ValueError("Member load type must be UDL or Point.")
+
+    def validate_member_load_reference(
+        self,
+        element_id: int,
+        load_type: str = "udl",
+        direction: str = "local_y",
+    ) -> dict[str, Any]:
+        element_id = int(element_id)
+        element = self.frame_elements.get(element_id) or self.truss_elements.get(element_id)
+        if element is None:
+            raise ValueError(f"Unknown element id {element_id}.")
+
+        load_type_norm = str(load_type).strip().lower()
+        direction_norm = str(direction).strip().lower()
+        if load_type_norm not in {"udl", "point"}:
+            raise ValueError("Member load type must be UDL or Point.")
+        if direction_norm not in {"local_y", "local_x"}:
+            raise ValueError("Member load direction must be local_y or local_x.")
+        if element["type"] == "truss" and direction_norm == "local_y":
+            raise ValueError("Transverse local_y member loads are only supported for frame elements in the GUI.")
+        return element
+
+    def _element_length(self, element: dict[str, Any]) -> float | None:
+        node_i = self.nodes.get(int(element["node_i"]))
+        node_j = self.nodes.get(int(element["node_j"]))
+        if node_i is None or node_j is None:
+            return None
+        dx = float(node_j["x"]) - float(node_i["x"])
+        dy = float(node_j["y"]) - float(node_i["y"])
+        return (dx * dx + dy * dy) ** 0.5
 
 
 def _restraint_bool(value: str | bool) -> bool:
@@ -314,6 +440,7 @@ def _integer_keyed_table(table: str) -> bool:
         "frame_elements",
         "truss_elements",
         "nodal_loads",
+        "member_loads",
         "thermal_loads",
         "support_settlements",
         "modal_masses",
