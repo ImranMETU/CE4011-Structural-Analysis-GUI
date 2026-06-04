@@ -28,6 +28,10 @@ def test_input_dialog_module_imports_successfully():
     assert callable(dialogs.open_thermal_loads_dialog)
     assert callable(dialogs.open_support_settlements_dialog)
 
+    import gui.frame_generator_dialog as frame_dialog
+
+    assert callable(frame_dialog.open_frame_generator_dialog)
+
 
 def test_model_builder_module_imports_successfully():
     from gui.model_builder import ModelBuilder

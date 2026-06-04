@@ -23,6 +23,11 @@ for path in (SRC_ROOT, IO_ROOT):
         sys.path.insert(0, path_str)
 
 from analysis.modal_solver import solve_modal_analysis  # noqa: E402
+from gui.frame_generator_dialog import (  # noqa: E402
+    GENERATED_DIR,
+    generate_proposal_default_models,
+    open_frame_generator_dialog,
+)
 from gui.input_dialogs import (  # noqa: E402
     open_analysis_options_dialog,
     open_frame_elements_dialog,
@@ -74,6 +79,7 @@ from xml_loader import load_structure_from_xml  # noqa: E402
 PLOT_TYPES = (
     "Geometry",
     "Model View",
+    "Presentation Model View",
     "Deformed Shape",
     "Axial Force Diagram",
     "Shear Force Diagram",
@@ -100,6 +106,11 @@ STATIC_PLOT_TYPES = {
     "Axial Force Diagram",
     "Shear Force Diagram",
     "Bending Moment Diagram",
+}
+
+MODEL_VIEW_TYPES = {
+    "Model View",
+    "Presentation Model View",
 }
 
 MODAL_PLOT_TYPES = {
@@ -169,6 +180,7 @@ class StaticAnalysisApp:
         self.text_editor_widget: tk.Text | None = None
         self.text_model_path: Path | None = None
         self.input_source: str | None = None
+        self.generated_model_name: str | None = None
         self.model_builder = ModelBuilder()
         self.static_result: dict[str, Any] | None = None
         self.modal_result: dict[str, Any] | None = None
@@ -209,7 +221,9 @@ class StaticAnalysisApp:
         file_menu.add_command(label="Open XML Model", command=self.open_xml_model)
         file_menu.add_command(label="Open JSON Model", command=self.open_json_model)
         file_menu.add_command(label="Open Text Model", command=self.open_text_model)
+        file_menu.add_command(label="Open Generated Model", command=self.open_generated_model)
         file_menu.add_command(label="Save Text Model", command=self.save_text_model)
+        file_menu.add_command(label="Generate Proposal Models", command=self.generate_proposal_models)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.destroy)
         menu_bar.add_cascade(label="File", menu=file_menu)
@@ -220,6 +234,7 @@ class StaticAnalysisApp:
         define_menu.add_command(label="Nodes / Joints", command=self.define_nodes)
         define_menu.add_command(label="Frame Elements", command=self.define_frame_elements)
         define_menu.add_command(label="Truss Elements", command=self.define_truss_elements)
+        define_menu.add_command(label="Generate Frame Model", command=self.define_generate_frame_model)
         define_menu.add_command(label="Nodal Loads", command=self.define_nodal_loads)
         define_menu.add_command(label="Thermal Loads", command=self.define_thermal_loads)
         define_menu.add_command(label="Support Settlements", command=self.define_support_settlements)
@@ -236,7 +251,15 @@ class StaticAnalysisApp:
 
         display_menu = tk.Menu(menu_bar, tearoff=False)
         static_menu = tk.Menu(display_menu, tearoff=False)
-        for name in ("Geometry", "Model View", "Deformed Shape", "Axial Force Diagram", "Shear Force Diagram", "Bending Moment Diagram"):
+        for name in (
+            "Geometry",
+            "Model View",
+            "Presentation Model View",
+            "Deformed Shape",
+            "Axial Force Diagram",
+            "Shear Force Diagram",
+            "Bending Moment Diagram",
+        ):
             static_menu.add_command(label=name, command=lambda plot=name: self.select_plot_type(plot))
         modal_menu = tk.Menu(display_menu, tearoff=False)
         for name in ("Mode 1", "Mode 2", "Mode 3", "Mode 4", "Modal Frequencies", "Modal Periods"):
@@ -346,6 +369,35 @@ class StaticAnalysisApp:
         if file_path:
             self._load_model_from_path(Path(file_path), source="json")
 
+    def open_generated_model(self) -> None:
+        GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = filedialog.askopenfilename(
+            title="Open generated model",
+            initialdir=str(GENERATED_DIR),
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        path = Path(file_path)
+        try:
+            data = load_model_data(path)
+            mass_mapping = _load_companion_masses(path)
+        except Exception as exc:
+            self._show_error("Failed to load generated model", exc)
+            return
+
+        self._set_loaded_model(path, data, source="generated", mass_mapping=mass_mapping)
+        self.generated_model_name = path.stem
+        self.plot_type.set("Model View")
+        self._redraw_current_plot()
+        self._update_summary(
+            f"Loaded generated model: {path.name}\n"
+            f"Nodes: {len(data.get('nodes', []))}\n"
+            f"Elements: {len(data.get('elements', []))}\n"
+            f"{self._generated_mass_message()}"
+        )
+
     def open_text_model(self) -> None:
         file_path = filedialog.askopenfilename(title="Open text model", filetypes=[("Text model files", "*.txt")])
         if not file_path:
@@ -389,6 +441,7 @@ class StaticAnalysisApp:
         self.model_data = data
         self.text_mass_mapping = mass_mapping
         self.input_source = source
+        self.generated_model_name = None
         self.model_builder.load_from_structure_dict(data, mass_mapping)
         self.static_result = None
         self.modal_result = None
@@ -402,6 +455,7 @@ class StaticAnalysisApp:
         self.model_data = self.model_builder.to_structure_dict()
         self.text_mass_mapping = None
         self.input_source = "form"
+        self.generated_model_name = None
         self.static_result = None
         self.modal_result = None
         self.current_table = None
@@ -415,6 +469,37 @@ class StaticAnalysisApp:
 
     def new_assignment4_thermal_example(self) -> None:
         self._load_example_text_model("inputs/examples/a4_thermal_example.txt")
+
+    def generate_proposal_models(self) -> None:
+        try:
+            paths = generate_proposal_default_models()
+        except OSError as exc:
+            self._show_error("Proposal model generation failed", exc)
+            return
+
+        messagebox.showinfo(
+            "Proposal models generated",
+            "Generated proposal models:\n" + "\n".join(str(path) for path in paths),
+        )
+
+    def _load_generated_frame_model(
+        self,
+        data: dict[str, Any],
+        mass_mapping: dict[int, dict[str, float]] | None,
+        model_name: str,
+        path: Path | None,
+    ) -> None:
+        self._set_loaded_model(path, data, source="generated", mass_mapping=mass_mapping)
+        self.generated_model_name = model_name
+        self.plot_type.set("Model View")
+        self._redraw_current_plot()
+        self._update_summary(
+            f"Generated frame model loaded: {model_name}\n"
+            f"Nodes: {len(data.get('nodes', []))}\n"
+            f"Elements: {len(data.get('elements', []))}\n"
+            f"{self._generated_mass_message()}\n\n"
+            "Run static or modal analysis to view results."
+        )
 
     def _load_example_text_model(self, relative_path: str) -> None:
         path = Path(__file__).resolve().parents[2] / relative_path
@@ -535,7 +620,7 @@ class StaticAnalysisApp:
         try:
             self.static_result = run_static_analysis(self.model_data)
             self.current_table = None
-            if self.plot_type.get() not in STATIC_PLOT_TYPES and self.plot_type.get() != "Model View":
+            if self.plot_type.get() not in STATIC_PLOT_TYPES and self.plot_type.get() not in MODEL_VIEW_TYPES:
                 self.plot_type.set("Geometry")
             self._redraw_current_plot()
             self._update_summary()
@@ -599,7 +684,7 @@ class StaticAnalysisApp:
 
     def on_plot_type_changed(self, _value: str | None = None) -> None:
         plot_name = self.plot_type.get()
-        if plot_name == "Model View" and self.model_data is None:
+        if plot_name in MODEL_VIEW_TYPES and self.model_data is None:
             messagebox.showerror("No model loaded", "Load or define a model before selecting Model View.")
             self.plot_type.set("Geometry")
             return
@@ -623,10 +708,13 @@ class StaticAnalysisApp:
         self.ax = self.figure.add_subplot(111)
 
         plot_name = self.plot_type.get()
-        if plot_name == "Model View":
+        if plot_name in MODEL_VIEW_TYPES:
             if self.model_data is None:
                 return
-            plot_model_view(self.model_data, ax=self.ax, options={"mass_mapping": self.text_mass_mapping or {}})
+            options: dict[str, Any] = {"mass_mapping": self.text_mass_mapping or {}}
+            if plot_name == "Presentation Model View":
+                options.update({"show_axes": False, "show_grid": False, "show_legend": True})
+            plot_model_view(self.model_data, ax=self.ax, options=options)
         elif plot_name in STATIC_PLOT_TYPES:
             if self.static_result is None:
                 return
@@ -691,6 +779,8 @@ class StaticAnalysisApp:
             summary = message
         else:
             loaded_name = self.loaded_path.name if self.loaded_path is not None else "(unknown)"
+            if self.loaded_path is None and self.generated_model_name:
+                loaded_name = self.generated_model_name
             lines = [f"Loaded file: {loaded_name}", f"Current plot: {self.plot_type.get()}"]
 
             if self.static_result is not None:
@@ -716,7 +806,7 @@ class StaticAnalysisApp:
                 lines.extend(self._modal_summary_lines())
             else:
                 lines.extend(["", "Modal analysis: not run"])
-                lines.append("Mass assumption: default mass is assigned to free ux DOFs only.")
+                lines.append(self._pre_modal_mass_message())
 
             summary = "\n".join(lines)
 
@@ -1133,7 +1223,7 @@ class StaticAnalysisApp:
             return []
 
         mass_assumption = (
-            "Mass assumption: using modal mass records from text/form model."
+            self._active_mass_message()
             if self.text_mass_mapping
             else "Mass assumption: default mass assigned to free ux DOFs only; uy/rz mass = 0."
         )
@@ -1166,6 +1256,21 @@ class StaticAnalysisApp:
                 )
 
         return lines
+
+    def _generated_mass_message(self) -> str:
+        if self.text_mass_mapping:
+            return "Generated floor masses assigned to ux DOFs."
+        return "No generated mass mapping; using default mass field for modal analysis."
+
+    def _pre_modal_mass_message(self) -> str:
+        if self.input_source == "generated":
+            return self._generated_mass_message()
+        return "Mass assumption: default mass is assigned to free ux DOFs only."
+
+    def _active_mass_message(self) -> str:
+        if self.input_source == "generated":
+            return "Mass assumption: generated floor masses assigned to ux DOFs."
+        return "Mass assumption: using modal mass records from text/form model."
 
     def _thermal_load_count(self) -> int:
         if self.model_data is None:
@@ -1203,6 +1308,9 @@ class StaticAnalysisApp:
     def define_truss_elements(self) -> None:
         self._ensure_form_source()
         open_truss_elements_dialog(self.root, self.model_builder)
+
+    def define_generate_frame_model(self) -> None:
+        open_frame_generator_dialog(self.root, self._load_generated_frame_model)
 
     def define_nodal_loads(self) -> None:
         self._ensure_form_source()
@@ -1297,6 +1405,24 @@ def load_model_data(path: Path) -> dict[str, Any]:
             raise ValueError("JSON model root must be an object.")
         return data
     raise ValueError(f"Unsupported model file type: {path.suffix}")
+
+
+def _load_companion_masses(path: Path) -> dict[int, dict[str, float]] | None:
+    mass_path = path.with_name(f"{path.stem}_masses.json")
+    if not mass_path.exists():
+        return None
+    with mass_path.open("r", encoding="utf-8") as f:
+        raw = json.load(f)
+    if not isinstance(raw, dict):
+        raise ValueError("Generated mass mapping JSON root must be an object.")
+    return {
+        int(node_id): {
+            "ux": float(values.get("ux", 0.0)),
+            "uy": float(values.get("uy", 0.0)),
+            "rz": float(values.get("rz", 0.0)),
+        }
+        for node_id, values in raw.items()
+    }
 
 
 def build_default_ux_mass_mapping(structure: Structure, mass_value: float) -> dict[int, dict[str, float]]:
