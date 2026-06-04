@@ -10,6 +10,7 @@ from .modal_plots import (
     plot_modal_periods,
     plot_mode_shape,
 )
+from .model_view import plot_model_view
 from .static_plots import (
     plot_axial_force_diagram,
     plot_bending_moment_diagram,
@@ -25,6 +26,7 @@ __all__ = [
     "plot_modal_frequencies",
     "plot_modal_periods",
     "plot_mode_shape",
+    "plot_model_view",
     "plot_axial_force_diagram",
     "plot_bending_moment_diagram",
     "plot_deformed_shape",

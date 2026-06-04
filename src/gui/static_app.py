@@ -54,6 +54,7 @@ from gui.result_tables import (  # noqa: E402
 from model.structure import Structure  # noqa: E402
 from postprocessing.modal_results import package_modal_results  # noqa: E402
 from postprocessing.static_results import run_static_analysis  # noqa: E402
+from visualization.model_view import plot_model_view  # noqa: E402
 from visualization.modal_plots import (  # noqa: E402
     plot_modal_frequencies,
     plot_modal_periods,
@@ -72,6 +73,7 @@ from xml_loader import load_structure_from_xml  # noqa: E402
 
 PLOT_TYPES = (
     "Geometry",
+    "Model View",
     "Deformed Shape",
     "Axial Force Diagram",
     "Shear Force Diagram",
@@ -234,7 +236,7 @@ class StaticAnalysisApp:
 
         display_menu = tk.Menu(menu_bar, tearoff=False)
         static_menu = tk.Menu(display_menu, tearoff=False)
-        for name in ("Geometry", "Deformed Shape", "Axial Force Diagram", "Shear Force Diagram", "Bending Moment Diagram"):
+        for name in ("Geometry", "Model View", "Deformed Shape", "Axial Force Diagram", "Shear Force Diagram", "Bending Moment Diagram"):
             static_menu.add_command(label=name, command=lambda plot=name: self.select_plot_type(plot))
         modal_menu = tk.Menu(display_menu, tearoff=False)
         for name in ("Mode 1", "Mode 2", "Mode 3", "Mode 4", "Modal Frequencies", "Modal Periods"):
@@ -533,7 +535,7 @@ class StaticAnalysisApp:
         try:
             self.static_result = run_static_analysis(self.model_data)
             self.current_table = None
-            if self.plot_type.get() not in STATIC_PLOT_TYPES:
+            if self.plot_type.get() not in STATIC_PLOT_TYPES and self.plot_type.get() != "Model View":
                 self.plot_type.set("Geometry")
             self._redraw_current_plot()
             self._update_summary()
@@ -597,6 +599,10 @@ class StaticAnalysisApp:
 
     def on_plot_type_changed(self, _value: str | None = None) -> None:
         plot_name = self.plot_type.get()
+        if plot_name == "Model View" and self.model_data is None:
+            messagebox.showerror("No model loaded", "Load or define a model before selecting Model View.")
+            self.plot_type.set("Geometry")
+            return
         if plot_name in STATIC_PLOT_TYPES and self.static_result is None:
             messagebox.showerror("No static results", "Run static analysis before selecting a static result plot.")
             self.plot_type.set("Geometry")
@@ -617,7 +623,11 @@ class StaticAnalysisApp:
         self.ax = self.figure.add_subplot(111)
 
         plot_name = self.plot_type.get()
-        if plot_name in STATIC_PLOT_TYPES:
+        if plot_name == "Model View":
+            if self.model_data is None:
+                return
+            plot_model_view(self.model_data, ax=self.ax, options={"mass_mapping": self.text_mass_mapping or {}})
+        elif plot_name in STATIC_PLOT_TYPES:
             if self.static_result is None:
                 return
             plot_func = _static_plot_function(plot_name)
