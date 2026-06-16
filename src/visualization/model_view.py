@@ -106,6 +106,19 @@ def _draw_elements(ax, nodes: dict[int, dict[str, Any]], elements: dict[int, dic
                 va="center",
                 zorder=20,
             )
+        axis_offset = element.get("axis_offset", {}) or {}
+        if axis_offset:
+            mx, my, nx, ny = _element_mid_normal(node_i, node_j)
+            ax.text(
+                mx - 1.8 * nx * offset,
+                my - 1.8 * ny * offset,
+                _axis_offset_label(axis_offset),
+                color="tab:cyan",
+                fontsize=8,
+                ha="center",
+                va="center",
+                zorder=35,
+            )
 
 
 def _draw_nodes(ax, nodes: dict[int, dict[str, Any]], opts, offset: float) -> None:
@@ -263,6 +276,8 @@ def _draw_one_member_load(
         w = float(load["w"])
         sign = _sign(w)
         label = f"UDL w={w:.3g}"
+        if "x_start" in load or "x_end" in load:
+            label += f", x={float(load.get('x_start', 0.0)):.3g}-{float(load.get('x_end', length)):.3g}"
         for fraction in (0.25, 0.5, 0.75):
             bx = xi + fraction * (xj - xi)
             by = yi + fraction * (yj - yi)
@@ -383,6 +398,7 @@ def _draw_legend(ax) -> None:
         Line2D([0], [0], marker="o", color="black", markerfacecolor="white", linestyle="", label="Node / node label"),
         Line2D([0], [0], color="tab:blue", linestyle="", marker="$E$", label="Element label"),
         Line2D([0], [0], color="tab:brown", linewidth=1.4, label="Member load"),
+        Line2D([0], [0], color="tab:cyan", linestyle="", marker="$o$", label="Axis offset"),
         Line2D([0], [0], color="tab:orange", linestyle="", marker="$T$", label="Thermal load"),
         Line2D([0], [0], color="tab:purple", linewidth=1.4, label="Settlement"),
         Patch(facecolor="0.25", edgecolor="0.15", label="Support"),
@@ -402,6 +418,12 @@ def _thermal_label(load: dict[str, Any]) -> str:
     if "T_uniform" in load:
         return f"T={float(load['T_uniform']):.3g}"
     return ""
+
+
+def _axis_offset_label(axis_offset: dict[str, Any]) -> str:
+    i_offset = float(axis_offset.get("i_local_y", 0.0))
+    j_offset = float(axis_offset.get("j_local_y", 0.0))
+    return f"off i={i_offset:.3g}, j={j_offset:.3g}"
 
 
 def _arrow(ax, x: float, y: float, dx: float, dy: float, color: str) -> None:

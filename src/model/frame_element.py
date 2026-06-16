@@ -6,6 +6,10 @@ Legacy stiffness helpers + OO FrameElement class.
 
 import math
 
+from analysis.axis_transformation import (
+    transform_frame_fixed_end_forces_for_offsets,
+    transform_frame_local_stiffness_for_offsets,
+)
 from .element import Element
 
 
@@ -21,6 +25,8 @@ class FrameElement(Element):
         section,
         release_start=False,
         release_end=False,
+        axis_offset_i=0.0,
+        axis_offset_j=0.0,
     ):
         super().__init__(element_id, node_i, node_j, material, section)
         if self.material.E <= 0.0 or self.section.A <= 0.0:
@@ -29,6 +35,8 @@ class FrameElement(Element):
             raise ValueError("Frame element requires nonzero moment of inertia I.")
         self.release_start = bool(release_start)
         self.release_end = bool(release_end)
+        self.axis_offset_i = float(axis_offset_i)
+        self.axis_offset_j = float(axis_offset_j)
 
     def local_stiffness(self):
         k_base = compute_local_stiffness(
@@ -38,10 +46,10 @@ class FrameElement(Element):
             self.length(),
         )
         if not (self.release_start or self.release_end):
-            return k_base
+            return self._apply_axis_offsets_to_stiffness(k_base)
         f_zero = [0.0] * 6
         k_mod, _ = self._apply_releases(k_base, f_zero)
-        return k_mod
+        return self._apply_axis_offsets_to_stiffness(k_mod)
 
     def equivalent_nodal_load_local(self):
         L = self.length()
@@ -100,9 +108,30 @@ class FrameElement(Element):
                 L,
             )
             _, f_mod = self._apply_releases(k_base, f_local)
-            return f_mod
+            return self._apply_axis_offsets_to_fixed_end_forces(f_mod)
 
-        return f_local
+        return self._apply_axis_offsets_to_fixed_end_forces(f_local)
+
+    def _has_axis_offsets(self):
+        return abs(self.axis_offset_i) > 0.0 or abs(self.axis_offset_j) > 0.0
+
+    def _apply_axis_offsets_to_stiffness(self, k_local):
+        if not self._has_axis_offsets():
+            return k_local
+        return transform_frame_local_stiffness_for_offsets(
+            k_local,
+            self.axis_offset_i,
+            self.axis_offset_j,
+        )
+
+    def _apply_axis_offsets_to_fixed_end_forces(self, f_local):
+        if not self._has_axis_offsets():
+            return f_local
+        return transform_frame_fixed_end_forces_for_offsets(
+            f_local,
+            self.axis_offset_i,
+            self.axis_offset_j,
+        )
 
     def _apply_releases(self, k_local, f_local):
         released = []

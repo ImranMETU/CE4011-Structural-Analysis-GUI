@@ -62,6 +62,16 @@ def solve_modal_from_matrices(
     if massive.size == 0:
         raise ValueError("Modal analysis requires at least one massive active DOF.")
 
+    kbb_condition_number = None
+    if massless.size > 0:
+        k_bb_for_diagnostics = k[np.ix_(massless, massless)]
+        try:
+            kbb_condition_number = float(np.linalg.cond(k_bb_for_diagnostics))
+        except np.linalg.LinAlgError:
+            kbb_condition_number = float("inf")
+        if not np.isfinite(kbb_condition_number) or kbb_condition_number > 1.0e12:
+            notes.append("Massless DOF stiffness block K_bb is ill-conditioned; modal condensation may be sensitive.")
+
     k_condensed, m_condensed = _condense_massless_dofs(k, m, massive, massless, notes)
 
     eigenvalues, condensed_modes = scipy_linalg.eigh(k_condensed, m_condensed)
@@ -97,8 +107,21 @@ def solve_modal_from_matrices(
         "full_free_mode_shapes": full_modes,
         "massive_dof_indices": massive.tolist(),
         "massless_dof_indices": massless.tolist(),
+        "free_stiffness_matrix": k,
         "condensed_stiffness": k_condensed,
+        "condensed_mass_matrix": m_condensed,
         "active_mass_matrix": m,
+        "matrix_diagnostics": {
+            "free_stiffness_size": int(k.shape[0]),
+            "free_mass_size": int(m.shape[0]),
+            "massive_dof_count": int(massive.size),
+            "massless_dof_count": int(massless.size),
+            "condensed_stiffness_size": int(k_condensed.shape[0]),
+            "condensed_mass_size": int(m_condensed.shape[0]),
+            "condensed_stiffness_symmetry_error": _symmetry_error(k_condensed),
+            "condensed_mass_symmetry_error": _symmetry_error(m_condensed),
+            "kbb_condition_number": kbb_condition_number,
+        },
         "notes": notes,
     }
 
@@ -186,6 +209,12 @@ def _validate_square_pair(k: np.ndarray, m: np.ndarray) -> None:
         raise ValueError("Mass matrix must be square.")
     if k.shape != m.shape:
         raise ValueError(f"Stiffness and mass shapes must match, got {k.shape} and {m.shape}.")
+
+
+def _symmetry_error(matrix: np.ndarray) -> float:
+    if matrix.size == 0:
+        return 0.0
+    return float(np.max(np.abs(matrix - matrix.T)))
 
 
 def _require_scipy_linalg():

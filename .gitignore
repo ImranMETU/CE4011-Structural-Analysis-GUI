@@ -13,10 +13,17 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+venv/
+.DS_Store
+desktop.ini
 .env/
+.mypy_cache/
+.ruff_cache/
 *.egg-info/
 
 # generated outputs
 results/**/*.txt
 results/**/*.csv
 results/**/*.png
+*.log
+*.tmp

@@ -52,6 +52,21 @@ def _small_model():
     }
 
 
+def _support_model():
+    return {
+        "nodes": [
+            {"id": 1, "x": 0.0, "y": 0.0, "restraints": {"ux": True, "uy": True, "rz": True}},
+            {"id": 2, "x": 2.0, "y": 0.0, "restraints": {"ux": True, "uy": True, "rz": False}},
+            {"id": 3, "x": 4.0, "y": 0.0, "restraints": {"ux": False, "uy": True, "rz": False}},
+        ],
+        "elements": [
+            {"id": 1, "type": "frame", "node_i": 1, "node_j": 2},
+            {"id": 2, "type": "truss", "node_i": 2, "node_j": 3},
+        ],
+        "nodal_loads": [],
+    }
+
+
 def test_model_view_plot_function_imports():
     from visualization.model_view import plot_model_view
 
@@ -110,3 +125,46 @@ def test_model_view_figure_can_be_saved(tmp_path):
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
+
+
+def test_model_view_presentation_options_hide_axes_and_show_legend():
+    from visualization.model_view import plot_model_view
+
+    fig, ax = plot_model_view(
+        _small_model(),
+        options={"show_axes": False, "show_grid": False, "show_legend": True},
+    )
+
+    assert not ax.axison
+    assert ax.get_legend() is not None
+    legend_labels = {text.get_text() for text in ax.get_legend().get_texts()}
+    assert "Frame element" in legend_labels
+    assert "Thermal load" in legend_labels
+    plt.close(fig)
+
+
+def test_model_view_can_hide_thermal_and_settlement_annotations():
+    from visualization.model_view import plot_model_view
+
+    fig, ax = plot_model_view(
+        _small_model(),
+        options={"show_thermal": False, "show_settlements": False},
+    )
+
+    labels = {text.get_text() for text in ax.texts}
+    assert not any("Ttop" in label for label in labels)
+    assert not any("du_y" in label for label in labels)
+    plt.close(fig)
+
+
+def test_model_view_draws_fixed_pinned_and_roller_supports():
+    from visualization.model_view import plot_model_view
+
+    fig, ax = plot_model_view(_support_model())
+
+    labels = {text.get_text() for text in ax.texts}
+    assert "FIX" in labels
+    assert "PIN" in labels
+    assert "uy" in labels
+    assert len(ax.patches) >= 3
+    plt.close(fig)

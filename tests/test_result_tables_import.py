@@ -44,6 +44,36 @@ def _static_result():
 
 def _modal_result():
     return {
+        "eigenvalues": [4.0, 25.0],
+        "omega": [2.0, 5.0],
+        "frequencies_hz": [0.318309886, 0.795774715],
+        "periods": [3.141592654, 1.256637061],
+        "full_free_mode_shapes": [[1.0, 0.0], [0.0, 1.0]],
+        "free_stiffness_matrix": [[40.0, 0.0], [0.0, 50.0]],
+        "active_mass_matrix": [[10.0, 0.0], [0.0, 0.0]],
+        "condensed_stiffness": [[4.0]],
+        "condensed_mass_matrix": [[10.0]],
+        "massive_dof_indices": [0],
+        "massless_dof_indices": [1],
+        "matrix_diagnostics": {
+            "free_stiffness_size": 2,
+            "free_mass_size": 2,
+            "massive_dof_count": 1,
+            "massless_dof_count": 1,
+            "condensed_stiffness_size": 1,
+            "condensed_mass_size": 1,
+            "condensed_stiffness_symmetry_error": 0.0,
+            "condensed_mass_symmetry_error": 0.0,
+            "kbb_condition_number": 1.0,
+        },
+        "free_dof_map": [
+            {"index": 0, "node": 1, "dof": "ux"},
+            {"index": 1, "node": 2, "dof": "rz"},
+        ],
+        "node_mode_shapes": [
+            {1: {"ux": 1.0, "uy": 0.0, "rz": 0.0}, 2: {"ux": 0.0, "uy": 0.0, "rz": 0.0}},
+            {1: {"ux": 0.0, "uy": 0.0, "rz": 0.0}, 2: {"ux": 0.0, "uy": 0.0, "rz": 1.0}},
+        ],
         "frequency_table": [
             {"mode": 1, "omega": 2.0, "frequency_hz": 0.318309886, "period": 3.141592654},
             {"mode": 2, "omega": 5.0, "frequency_hz": 0.795774715, "period": 1.256637061},
@@ -56,6 +86,13 @@ def _modal_result():
                 "effective_modal_mass_ratio": 0.5,
             }
         ],
+        "mass_source_summary": {
+            "source_type": "manual",
+            "node_count": 1,
+            "total_ux_mass": 10.0,
+            "total_uy_mass": 0.0,
+            "total_rz_mass": 0.0,
+        },
     }
 
 
@@ -104,15 +141,41 @@ def test_static_result_formatters_return_expected_headers_and_rows():
 
 
 def test_modal_result_formatters_return_expected_headers_and_rows():
-    from gui.result_tables import format_modal_frequency_rows, format_modal_participation_rows
+    from gui.result_tables import (
+        format_condensed_modal_matrix_rows,
+        format_full_mode_shape_rows,
+        format_modal_dof_classification_rows,
+        format_modal_frequency_rows,
+        format_modal_mass_summary_rows,
+        format_modal_participation_rows,
+        format_modal_properties_rows,
+    )
 
     freq_headers, freq_rows = format_modal_frequency_rows(_modal_result())
     part_headers, part_rows = format_modal_participation_rows(_modal_result())
+    prop_headers, prop_rows = format_modal_properties_rows(_modal_result())
+    dof_headers, dof_rows = format_modal_dof_classification_rows(_modal_result())
+    matrix_headers, matrix_rows = format_condensed_modal_matrix_rows(_modal_result())
+    shape_headers, shape_rows = format_full_mode_shape_rows(_modal_result())
+    mass_headers, mass_rows = format_modal_mass_summary_rows(_modal_result())
 
     assert freq_headers == ["Mode", "omega_rad_per_s", "frequency_Hz", "period_s"]
     assert freq_rows[0] == ["1", "2.000000e+00", "3.183099e-01", "3.141593e+00"]
     assert part_headers == ["Mode", "Gamma", "Effective Modal Mass", "Effective Mass Ratio"]
     assert part_rows[0] == ["1", "1.250000e+00", "5.000000e+01", "5.000000e-01"]
+    assert prop_headers[0] == "Mode"
+    assert "Modal Mass Mn" in prop_headers
+    assert "Modal Stiffness Kn" in prop_headers
+    assert prop_rows[0][0] == "1"
+    assert prop_rows[0][prop_headers.index("Modal Mass Mn")] == "1.000000e+01"
+    assert prop_rows[0][prop_headers.index("Modal Stiffness Kn")] == "4.000000e+01"
+    assert dof_headers == ["Free DOF Index", "Node", "DOF", "Mass", "Classification", "Note"]
+    assert dof_rows[1][4] == "massless condensed"
+    assert matrix_headers == ["Property", "Value"]
+    assert matrix_rows[0][0] == "free_stiffness_size"
+    assert shape_headers == ["Mode", "Node", "ux", "uy", "rz"]
+    assert mass_headers == ["Property", "Value"]
+    assert any(row[0] == "source_type" and row[1] == "manual" for row in mass_rows)
 
 
 def test_drift_result_formatters_return_expected_headers_and_rows():

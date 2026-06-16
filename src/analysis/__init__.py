@@ -1,23 +1,9 @@
-"""Analysis backends beyond the static DSM solver."""
+"""Analysis package.
 
-from .mass_assembly import (
-    assemble_lumped_mass_matrix,
-    assemble_lumped_mass_vector,
-    build_lateral_floor_mass_mapping,
-)
-from .modal_solver import (
-    ModalDependencyError,
-    solve_modal_analysis,
-    solve_modal_from_matrices,
-)
-from .response_spectrum_generator import generate_elastic_response_spectrum
+Keep this initializer lightweight. Import analysis functionality directly from
+its concrete module, for example ``analysis.modal_solver`` or
+``analysis.modal_rha``. Eager re-exports here can create circular imports with
+``model`` and ``postprocessing`` modules.
+"""
 
-__all__ = [
-    "ModalDependencyError",
-    "assemble_lumped_mass_matrix",
-    "assemble_lumped_mass_vector",
-    "build_lateral_floor_mass_mapping",
-    "generate_elastic_response_spectrum",
-    "solve_modal_analysis",
-    "solve_modal_from_matrices",
-]
+__all__: list[str] = []

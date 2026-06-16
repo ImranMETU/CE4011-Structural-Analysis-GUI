@@ -16,8 +16,10 @@ for path in (SRC_ROOT, ROOT):
         sys.path.insert(0, path_str)
 
 from postprocessing.modal_results import (
+    apply_mode_shape_sign_convention,
     calculate_modal_participation,
     frequency_table,
+    mode_shape_component_labels,
     normalize_modes_by_max_translation,
     package_modal_results,
     period_table,
@@ -99,3 +101,53 @@ def test_lateral_participation_calculations():
     assert participation[1]["gamma"] == pytest.approx(1.0 / 3.0)
     assert participation[1]["effective_modal_mass"] == pytest.approx(20.0)
     assert participation[1]["effective_modal_mass_ratio"] == pytest.approx(2.0 / 3.0)
+
+
+def test_roof_ux_sign_convention_flips_negative_roof_mode():
+    modal = _artificial_modal_result()
+    modal["full_free_mode_shapes"] = np.array(
+        [
+            [-0.5, 0.0],
+            [-2.0, 3.0],
+            [0.0, 0.5],
+        ]
+    )
+    modal["nodes"] = {
+        1: {"x": 0.0, "y": 0.0},
+        2: {"x": 3.0, "y": 4.0},
+    }
+    packaged = package_modal_results(modal)
+
+    display = apply_mode_shape_sign_convention(packaged, "roof ux positive")
+
+    assert packaged["node_mode_shapes"][0][2]["ux"] == pytest.approx(-2.0)
+    assert display["node_mode_shapes"][0][2]["ux"] == pytest.approx(2.0)
+    assert display["display_sign_convention"] == "roof ux positive"
+
+
+def test_sign_convention_leaves_positive_roof_mode_unchanged():
+    packaged = package_modal_results(_artificial_modal_result())
+
+    display = apply_mode_shape_sign_convention(packaged, "roof ux positive")
+
+    assert display["node_mode_shapes"][0][1]["ux"] == pytest.approx(2.0)
+
+
+def test_largest_component_sign_convention_and_mode_labels():
+    modal = _artificial_modal_result()
+    modal["full_free_mode_shapes"] = np.array(
+        [
+            [-0.5, 0.0],
+            [-2.0, 3.0],
+            [0.0, -0.5],
+        ]
+    )
+    packaged = package_modal_results(modal)
+
+    display = apply_mode_shape_sign_convention(packaged, "largest component positive")
+    labels = mode_shape_component_labels(display, mode_index=0, normalized=True)
+
+    assert display["full_free_mode_shapes"][1, 0] == pytest.approx(2.0)
+    assert labels[1].startswith("N1: phi_x=")
+    assert "phi_y=" in labels[1]
+    assert "phi_r=" in labels[1]

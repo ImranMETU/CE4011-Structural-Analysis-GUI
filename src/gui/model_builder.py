@@ -27,12 +27,14 @@ class ModelBuilder:
         self.nodes: dict[int, dict[str, Any]] = {}
         self.frame_elements: dict[int, dict[str, Any]] = {}
         self.truss_elements: dict[int, dict[str, Any]] = {}
+        self.axis_offsets: dict[int, dict[str, Any]] = {}
         self.nodal_loads: dict[int, dict[str, Any]] = {}
         self.member_loads: dict[int, dict[str, Any]] = {}
         self._next_member_load_id = 1
         self.thermal_loads: dict[int, dict[str, Any]] = {}
         self.support_settlements: dict[int, dict[str, float | None]] = {}
         self.modal_masses: dict[int, dict[str, float]] = {}
+        self.modal_mass_source_type = "manual"
         self.analysis_options = deepcopy(DEFAULT_ANALYSIS_OPTIONS)
 
     def add_material(self, name: str, E: float, alpha: float = 0.0) -> None:
@@ -66,6 +68,18 @@ class ModelBuilder:
             element_id, "truss", node_i, node_j, material, section
         )
 
+    def add_axis_offset(self, element_id: int, i_local_y: float = 0.0, j_local_y: float = 0.0) -> None:
+        element_id = int(element_id)
+        if element_id in self.truss_elements:
+            raise ValueError("Axis offsets are supported for frame elements only.")
+        if element_id not in self.frame_elements:
+            raise ValueError(f"Unknown frame element id {element_id}.")
+        self.axis_offsets[element_id] = {
+            "element": element_id,
+            "i_local_y": float(i_local_y),
+            "j_local_y": float(j_local_y),
+        }
+
     def add_nodal_load(self, node_id: int, fx: float = 0.0, fy: float = 0.0, mz: float = 0.0) -> None:
         self._require_node(node_id)
         self.nodal_loads[int(node_id)] = {
@@ -83,11 +97,22 @@ class ModelBuilder:
         w: float | str | None = None,
         p: float | str | None = None,
         a: float | str | None = None,
+        x_start: float | str | None = None,
+        x_end: float | str | None = None,
         load_id: int | None = None,
     ) -> int:
         """Add or update a mechanical UDL/point member load."""
         load_id = int(load_id) if load_id not in (None, "") else self._allocate_member_load_id()
-        payload = self._member_load_payload(element_id, load_type, direction, w=w, p=p, a=a)
+        payload, display_range = self._member_load_payload(
+            element_id,
+            load_type,
+            direction,
+            w=w,
+            p=p,
+            a=a,
+            x_start=x_start,
+            x_end=x_end,
+        )
         record = {
             "id": load_id,
             "element": int(element_id),
@@ -96,6 +121,8 @@ class ModelBuilder:
             "w": payload.get("w"),
             "p": payload.get("p"),
             "a": payload.get("a"),
+            "x_start": display_range.get("x_start"),
+            "x_end": display_range.get("x_end"),
             "payload": payload,
         }
         self.member_loads[load_id] = record
@@ -111,10 +138,22 @@ class ModelBuilder:
         w: float | str | None = None,
         p: float | str | None = None,
         a: float | str | None = None,
+        x_start: float | str | None = None,
+        x_end: float | str | None = None,
     ) -> None:
         if int(load_id) not in self.member_loads:
             raise ValueError(f"Unknown member load id {load_id}.")
-        self.add_member_load(element_id, load_type, direction, w=w, p=p, a=a, load_id=int(load_id))
+        self.add_member_load(
+            element_id,
+            load_type,
+            direction,
+            w=w,
+            p=p,
+            a=a,
+            x_start=x_start,
+            x_end=x_end,
+            load_id=int(load_id),
+        )
 
     def get_member_loads(self) -> list[dict[str, Any]]:
         return self.table_records("member_loads")
@@ -166,6 +205,18 @@ class ModelBuilder:
             "uy": float(uy),
             "rz": float(rz),
         }
+        self.modal_mass_source_type = "manual"
+
+    def set_modal_mass_mapping(self, mapping: dict[int, dict[str, float]], source_type: str = "manual") -> None:
+        self.modal_masses = {}
+        for node_id, masses in mapping.items():
+            self._require_node(int(node_id))
+            self.modal_masses[int(node_id)] = {
+                "ux": float(masses.get("ux", 0.0)),
+                "uy": float(masses.get("uy", 0.0)),
+                "rz": float(masses.get("rz", 0.0)),
+            }
+        self.modal_mass_source_type = source_type
 
     def update_analysis_options(self, **options: float | int) -> None:
         for key, value in options.items():
@@ -207,6 +258,11 @@ class ModelBuilder:
             by_element[load["element"]].setdefault("member_loads", []).append(deepcopy(load["payload"]))
         for element_id, load in self.thermal_loads.items():
             by_element[element_id].setdefault("member_loads", []).append(deepcopy(load["payload"]))
+        for element_id, offset in self.axis_offsets.items():
+            by_element[element_id]["axis_offset"] = {
+                "i_local_y": float(offset.get("i_local_y", 0.0)),
+                "j_local_y": float(offset.get("j_local_y", 0.0)),
+            }
 
         return {
             "nodes": nodes,
@@ -252,7 +308,16 @@ class ModelBuilder:
                 self.add_frame_element(
                     element["id"], element["node_i"], element["node_j"], element["material"], element["section"]
                 )
+                axis_offset = element.get("axis_offset", {}) or {}
+                if axis_offset:
+                    self.add_axis_offset(
+                        element["id"],
+                        axis_offset.get("i_local_y", 0.0),
+                        axis_offset.get("j_local_y", 0.0),
+                    )
             elif element["type"].lower() == "truss":
+                if element.get("axis_offset"):
+                    raise ValueError("Axis offsets are supported for frame elements only.")
                 self.add_truss_element(
                     element["id"], element["node_i"], element["node_j"], element["material"], element["section"]
                 )
@@ -283,6 +348,8 @@ class ModelBuilder:
                         w=load.get("w"),
                         p=load.get("p"),
                         a=load.get("a"),
+                        x_start=load.get("x_start"),
+                        x_end=load.get("x_end"),
                     )
         for load in data.get("nodal_loads", []):
             self.add_nodal_load(load["node"], load.get("fx", 0.0), load.get("fy", 0.0), load.get("mz", 0.0))
@@ -297,6 +364,7 @@ class ModelBuilder:
             f"Nodes: {len(self.nodes)}",
             f"Frame elements: {len(self.frame_elements)}",
             f"Truss elements: {len(self.truss_elements)}",
+            f"Axis offset records: {len(self.axis_offsets)}",
             f"Nodal loads: {len(self.nodal_loads)}",
             f"Member loads: {len(self.member_loads)}",
             f"Thermal loads: {len(self.thermal_loads)}",
@@ -315,6 +383,8 @@ class ModelBuilder:
             return self.frame_elements
         if table == "truss_elements":
             return self.truss_elements
+        if table == "axis_offsets":
+            return self.axis_offsets
         if table == "nodal_loads":
             return self.nodal_loads
         if table == "member_loads":
@@ -350,14 +420,17 @@ class ModelBuilder:
         w: float | str | None = None,
         p: float | str | None = None,
         a: float | str | None = None,
-    ) -> dict[str, float | str]:
+        x_start: float | str | None = None,
+        x_end: float | str | None = None,
+    ) -> tuple[dict[str, float | str], dict[str, float | None]]:
         element = self.validate_member_load_reference(element_id, load_type, direction)
         load_type_norm = str(load_type).strip().lower()
         direction_norm = str(direction).strip().lower()
         if load_type_norm == "udl":
             if w is None or str(w).strip() == "":
                 raise ValueError("UDL member load requires w.")
-            return {"type": "udl", "direction": direction_norm, "w": float(w)}
+            display_range = self._validate_full_span_udl_range(element, x_start, x_end)
+            return {"type": "udl", "direction": direction_norm, "w": float(w)}, display_range
         if load_type_norm == "point":
             if p is None or str(p).strip() == "":
                 raise ValueError("Point member load requires p.")
@@ -367,7 +440,12 @@ class ModelBuilder:
             length = self._element_length(element)
             if length is not None and (a_value < 0.0 or a_value > length):
                 raise ValueError(f"Point load location a must satisfy 0 <= a <= L ({length:.6g}).")
-            return {"type": "point", "direction": direction_norm, "p": float(p), "a": a_value}
+            if length is None and a_value < 0.0:
+                raise ValueError("Point load location a must be nonnegative.")
+            return {"type": "point", "direction": direction_norm, "p": float(p), "a": a_value}, {
+                "x_start": None,
+                "x_end": None,
+            }
         raise ValueError("Member load type must be UDL or Point.")
 
     def validate_member_load_reference(
@@ -399,6 +477,29 @@ class ModelBuilder:
         dx = float(node_j["x"]) - float(node_i["x"])
         dy = float(node_j["y"]) - float(node_i["y"])
         return (dx * dx + dy * dy) ** 0.5
+
+    def _validate_full_span_udl_range(
+        self,
+        element: dict[str, Any],
+        x_start: float | str | None,
+        x_end: float | str | None,
+    ) -> dict[str, float | None]:
+        length = self._element_length(element)
+        start_given = x_start is not None and str(x_start).strip() != ""
+        end_given = x_end is not None and str(x_end).strip() != ""
+
+        if length is None:
+            if start_given or end_given:
+                raise ValueError("UDL range cannot be validated because element length is unavailable.")
+            return {"x_start": None, "x_end": None}
+
+        start = float(x_start) if start_given else 0.0
+        end = float(x_end) if end_given else length
+        if start < 0.0 or end < 0.0 or start > end or end > length:
+            raise ValueError(f"Invalid UDL range: require 0 <= x_start <= x_end <= L ({length:.6g}).")
+        if abs(start) > 1.0e-9 or abs(end - length) > 1.0e-9:
+            raise ValueError("Partial UDL range is not supported by the current backend. Use x_start=0 and x_end=L.")
+        return {"x_start": 0.0, "x_end": length}
 
 
 def _restraint_bool(value: str | bool) -> bool:
@@ -439,6 +540,7 @@ def _integer_keyed_table(table: str) -> bool:
         "nodes",
         "frame_elements",
         "truss_elements",
+        "axis_offsets",
         "nodal_loads",
         "member_loads",
         "thermal_loads",

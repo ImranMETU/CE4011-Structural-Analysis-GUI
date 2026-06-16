@@ -11,3 +11,4 @@ FRAME 1 1 2 concrete square_50
 
 # Prescribed support settlement on restrained uy DOF at node 2
 SETTLEMENT 2 UY=-0.01
+

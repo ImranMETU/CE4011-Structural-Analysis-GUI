@@ -85,7 +85,13 @@ def _element_connectivity(structure: Structure) -> dict[int, dict[str, Any]]:
             "node_j": element.node_j.id,
             "length": element.length(),
             "angle": element.angle(),
+            "member_loads": [dict(load) for load in getattr(element, "member_loads", [])],
         }
+        if hasattr(element, "axis_offset_i") or hasattr(element, "axis_offset_j"):
+            elements[element.id]["axis_offset"] = {
+                "i_local_y": float(getattr(element, "axis_offset_i", 0.0)),
+                "j_local_y": float(getattr(element, "axis_offset_j", 0.0)),
+            }
     return elements
 
 

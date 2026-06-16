@@ -7,6 +7,11 @@ from typing import Any, Callable
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from analysis.mass_assembly import (
+    distribute_floor_mass_to_nodes,
+    lump_element_distributed_mass_to_nodes,
+    merge_mass_mappings,
+)
 from .model_builder import ModelBuilder
 
 
@@ -82,6 +87,35 @@ def open_frame_elements_dialog(parent, builder: ModelBuilder, on_change: Callabl
 
 def open_truss_elements_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
     _element_dialog(parent, builder, "Define Truss Elements", "truss_elements", builder.add_truss_element, on_change)
+
+
+def open_axis_offsets_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
+    _RecordDialog(
+        parent,
+        "Define Axis Offsets / Rigid End Offsets",
+        ("element", "i_local_y", "j_local_y"),
+        [
+            {"key": "element", "label": "Frame Element", "default": "1", "choices": [str(eid) for eid in sorted(builder.frame_elements)]},
+            {"key": "i_local_y", "label": "i local-y offset", "default": "0.0"},
+            {"key": "j_local_y", "label": "j local-y offset", "default": "0.0"},
+        ],
+        lambda: [
+            {
+                "element": record["element"],
+                "i_local_y": record["i_local_y"],
+                "j_local_y": record["j_local_y"],
+            }
+            for record in builder.table_records("axis_offsets")
+        ],
+        lambda values: builder.add_axis_offset(values["element"], values["i_local_y"], values["j_local_y"]),
+        lambda key: builder.delete_record("axis_offsets", key),
+        "element",
+        on_change=on_change,
+        help_text=(
+            "Offsets are 2D frame-only local-y rigid end/axis offsets. "
+            "Positive values follow each member's local-y direction."
+        ),
+    )
 
 
 def open_nodal_loads_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
@@ -210,6 +244,122 @@ def open_modal_masses_dialog(parent, builder: ModelBuilder, on_change: Callable[
         lambda key: builder.delete_record("modal_masses", key),
         "node",
         on_change=on_change,
+    )
+
+
+def open_modal_mass_source_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
+    dialog = tk.Toplevel(parent)
+    dialog.title("Define Modal Mass Source")
+    dialog.transient(parent)
+    dialog.resizable(True, False)
+    dialog.minsize(620, 280)
+
+    mode = tk.StringVar(value="floor")
+    overwrite = tk.BooleanVar(value=False)
+    fields: dict[str, tk.Entry | ttk.Combobox] = {}
+
+    top = ttk.Frame(dialog, padding=8)
+    top.pack(side=tk.TOP, fill=tk.X)
+    ttk.Label(top, text="Modal Mass Source: convert input to nodal lumped masses", font=("TkDefaultFont", 10, "bold")).grid(
+        row=0, column=0, columnspan=4, sticky="w", pady=(0, 6)
+    )
+    ttk.Radiobutton(top, text="Manual nodal mass", variable=mode, value="manual").grid(row=1, column=0, sticky="w")
+    ttk.Radiobutton(top, text="Floor lumped mass", variable=mode, value="floor").grid(row=1, column=1, sticky="w")
+    ttk.Radiobutton(top, text="Element distributed mass", variable=mode, value="element").grid(row=1, column=2, sticky="w")
+    ttk.Checkbutton(top, text="Overwrite existing masses", variable=overwrite).grid(row=1, column=3, sticky="w")
+
+    form = ttk.Frame(dialog, padding=(8, 0, 8, 8))
+    form.pack(side=tk.TOP, fill=tk.X)
+    specs = [
+        ("node", "Node ID", ""),
+        ("ux", "Manual ux", "0"),
+        ("uy", "Manual uy", "0"),
+        ("rz", "Manual rz", "0"),
+        ("floor_y", "Floor y", ""),
+        ("floor_mass", "Total floor mass", ""),
+        ("floor_direction", "Floor direction", "ux"),
+        ("element", "Element ID", ""),
+        ("m_per_length", "m per length", ""),
+        ("element_direction", "Element direction", "ux"),
+        ("include_uy", "Include uy (0/1)", "0"),
+    ]
+    for idx, (key, label, default) in enumerate(specs):
+        row = 2 * (idx // 4)
+        col = idx % 4
+        ttk.Label(form, text=label).grid(row=row, column=col, sticky="w", padx=3)
+        if key in {"floor_direction", "element_direction"}:
+            widget = ttk.Combobox(form, values=["ux", "uy", "rz"], width=14, state="readonly")
+        else:
+            widget = ttk.Entry(form, width=16)
+        widget.grid(row=row + 1, column=col, sticky="ew", padx=3, pady=(0, 4))
+        _set_widget_value(widget, default)
+        fields[key] = widget
+
+    ttk.Label(
+        dialog,
+        text="Distributed element mass is lumped half to each end node. The modal solver still uses a diagonal lumped mass matrix.",
+        foreground="#595959",
+        padding=(8, 0, 8, 6),
+    ).pack(side=tk.TOP, fill=tk.X)
+
+    def apply() -> bool:
+        try:
+            data = builder.to_structure_dict()
+            existing = builder.to_mass_mapping()
+            selected = mode.get()
+            if selected == "manual":
+                mapping = {
+                    int(fields["node"].get()): {
+                        "ux": float(fields["ux"].get() or 0.0),
+                        "uy": float(fields["uy"].get() or 0.0),
+                        "rz": float(fields["rz"].get() or 0.0),
+                    }
+                }
+                source = "manual"
+            elif selected == "floor":
+                mapping = distribute_floor_mass_to_nodes(
+                    data,
+                    floor_y=float(fields["floor_y"].get()),
+                    total_mass=float(fields["floor_mass"].get()),
+                    direction=fields["floor_direction"].get() or "ux",
+                )
+                source = "floor lumped"
+            elif selected == "element":
+                mapping = lump_element_distributed_mass_to_nodes(
+                    data,
+                    element_id=int(fields["element"].get()),
+                    mass_per_length=float(fields["m_per_length"].get()),
+                    direction=fields["element_direction"].get() or "ux",
+                    include_uy=bool(int(fields["include_uy"].get() or 0)),
+                )
+                source = "distributed element"
+            else:
+                raise ValueError("Unknown modal mass source mode.")
+            merged = mapping if overwrite.get() else merge_mass_mappings(existing, mapping)
+            builder.set_modal_mass_mapping(merged, source_type=source)
+        except Exception as exc:
+            messagebox.showerror("Invalid modal mass source", str(exc), parent=dialog)
+            return False
+        if on_change is not None:
+            on_change()
+        return True
+
+    def ok() -> None:
+        if apply():
+            dialog.destroy()
+
+    buttons = ttk.Frame(dialog, padding=8)
+    buttons.pack(side=tk.BOTTOM, fill=tk.X)
+    ttk.Button(buttons, text="Apply", command=apply).pack(side=tk.LEFT, padx=3)
+    ttk.Button(buttons, text="OK", command=ok).pack(side=tk.RIGHT, padx=3)
+    ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=3)
+
+
+def open_springs_direct_stiffness_dialog(parent) -> None:
+    messagebox.showinfo(
+        "Springs / Direct Stiffness",
+        "External nodal spring stiffness is deferred in this version. No hidden stiffness changes are applied.",
+        parent=parent,
     )
 
 

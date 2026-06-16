@@ -22,21 +22,26 @@ for path in (SRC_ROOT, IO_ROOT):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
+from analysis.mass_assembly import mass_mapping_summary  # noqa: E402
 from analysis.modal_solver import solve_modal_analysis  # noqa: E402
 from gui.frame_generator_dialog import (  # noqa: E402
     GENERATED_DIR,
     generate_proposal_default_models,
     open_frame_generator_dialog,
 )
+from gui.eigen_calculator_dialog import open_eigen_calculator_dialog  # noqa: E402
 from gui.input_dialogs import (  # noqa: E402
     open_analysis_options_dialog,
+    open_axis_offsets_dialog,
     open_frame_elements_dialog,
     open_materials_dialog,
     open_member_loads_dialog,
+    open_modal_mass_source_dialog,
     open_modal_masses_dialog,
     open_nodal_loads_dialog,
     open_nodes_dialog,
     open_sections_dialog,
+    open_springs_direct_stiffness_dialog,
     open_support_settlements_dialog,
     open_thermal_loads_dialog,
     open_truss_elements_dialog,
@@ -49,19 +54,38 @@ from gui.interactive_selection import (  # noqa: E402
     select_nodes_in_rectangle,
 )
 from gui.model_builder import ModelBuilder  # noqa: E402
+from gui.rha_dialog import open_rha_dialog  # noqa: E402
+from gui.rha_node_dialog import open_rha_node_dialog  # noqa: E402
+from gui.rsa_dialog import open_rsa_dialog  # noqa: E402
 from gui.result_tables import (  # noqa: E402
+    format_condensed_modal_matrix_rows,
+    format_element_deformed_slope_rows,
+    format_element_station_force_rows,
+    format_full_mode_shape_rows,
     format_member_force_rows,
+    format_modal_dof_classification_rows,
     format_modal_frequency_rows,
+    format_modal_mass_summary_rows,
     format_modal_participation_rows,
+    format_modal_properties_rows,
     format_nodal_displacement_rows,
     format_reaction_rows,
+    format_rha_peak_floor_response_rows,
+    format_rha_peak_story_drift_rows,
+    format_rha_node_peak_response_rows,
+    format_rsa_combined_response_rows,
+    format_rsa_modal_peak_response_rows,
+    format_rsa_modal_peak_story_drift_rows,
+    format_rha_summary_table_rows,
+    format_solver_diagnostics_table_rows,
     format_static_roof_displacement_rows,
     format_static_story_drift_rows,
     open_table_window,
     write_table_csv,
 )
 from model.structure import Structure  # noqa: E402
-from postprocessing.modal_results import package_modal_results  # noqa: E402
+from postprocessing.modal_results import apply_mode_shape_sign_convention, package_modal_results  # noqa: E402
+from postprocessing.solver_diagnostics import compute_solver_diagnostics  # noqa: E402
 from postprocessing.static_results import run_static_analysis  # noqa: E402
 from postprocessing.drift_results import (  # noqa: E402
     compute_floor_displacements,
@@ -73,11 +97,32 @@ from visualization.drift_plots import (  # noqa: E402
     plot_floor_displacement_profile,
     plot_story_drift_profile,
 )
+from visualization.element_station_plots import (  # noqa: E402
+    plot_deformed_slope_profile,
+    plot_hermite_deformed_shape,
+    plot_section_force_stations,
+)
 from visualization.model_view import plot_model_view  # noqa: E402
 from visualization.modal_plots import (  # noqa: E402
+    plot_modal_angular_frequencies,
     plot_modal_frequencies,
     plot_modal_periods,
     plot_mode_shape,
+)
+from visualization.rha_plots import (  # noqa: E402
+    plot_floor_displacement_histories,
+    plot_ground_motion_history,
+    plot_modal_coordinate_histories,
+    plot_peak_story_drift_envelope,
+    plot_roof_displacement_history,
+    plot_story_drift_histories,
+)
+from visualization.rha_node_plots import plot_node_response_history  # noqa: E402
+from visualization.rsa_plots import (  # noqa: E402
+    plot_rsa_combined_roof_response,
+    plot_rsa_combined_story_drift_envelope,
+    plot_rsa_modal_peak_roof_response,
+    plot_rsa_modal_peak_story_drift,
 )
 from visualization.static_plots import (  # noqa: E402
     plot_axial_force_diagram,
@@ -95,9 +140,12 @@ PLOT_TYPES = (
     "Model View",
     "Presentation Model View",
     "Deformed Shape",
+    "Hermite Deformed Shape",
     "Axial Force Diagram",
     "Shear Force Diagram",
     "Bending Moment Diagram",
+    "Section Force Stations",
+    "Deformed Slope Profile",
     "Story Drift Profile",
     "Drift Ratio Profile",
     "Floor Displacement Profile",
@@ -106,12 +154,25 @@ PLOT_TYPES = (
     "Mode 3",
     "Mode 4",
     "Modal Frequencies",
+    "Modal Angular Frequencies",
     "Modal Periods",
+    "RSA Modal Peak Roof Response",
+    "RSA Modal Peak Story Drift",
+    "RSA Combined Roof Response",
+    "RSA Combined Story Drift Envelope",
+    "RHA Ground Motion",
+    "RHA Roof Displacement History",
+    "RHA Floor Displacement Histories",
+    "RHA Story Drift Histories",
+    "RHA Peak Story Drift Envelope",
+    "RHA Modal Coordinate Histories",
+    "RHA Selected Node Response History",
 )
 
 PLOT_SCALES = {
     "Geometry": 1.0,
     "Deformed Shape": 1.0,
+    "Hermite Deformed Shape": 1.0,
     "Axial Force Diagram": 1.0e-6,
     "Shear Force Diagram": 1.0e-6,
     "Bending Moment Diagram": 1.0e-6,
@@ -120,9 +181,12 @@ PLOT_SCALES = {
 STATIC_PLOT_TYPES = {
     "Geometry",
     "Deformed Shape",
+    "Hermite Deformed Shape",
     "Axial Force Diagram",
     "Shear Force Diagram",
     "Bending Moment Diagram",
+    "Section Force Stations",
+    "Deformed Slope Profile",
 }
 
 MODEL_VIEW_TYPES = {
@@ -142,7 +206,25 @@ MODAL_PLOT_TYPES = {
     "Mode 3",
     "Mode 4",
     "Modal Frequencies",
+    "Modal Angular Frequencies",
     "Modal Periods",
+}
+
+RHA_PLOT_TYPES = {
+    "RHA Ground Motion",
+    "RHA Roof Displacement History",
+    "RHA Floor Displacement Histories",
+    "RHA Story Drift Histories",
+    "RHA Peak Story Drift Envelope",
+    "RHA Modal Coordinate Histories",
+    "RHA Selected Node Response History",
+}
+
+RSA_PLOT_TYPES = {
+    "RSA Modal Peak Roof Response",
+    "RSA Modal Peak Story Drift",
+    "RSA Combined Roof Response",
+    "RSA Combined Story Drift Envelope",
 }
 
 DEFAULT_TEXT_MODEL = """# CE4011 text model input deck
@@ -155,6 +237,7 @@ DEFAULT_TEXT_MODEL = """# CE4011 text model input deck
 # THERMAL element_id T_UNIFORM=50
 # MEMBER_LOAD element_id TYPE=UDL DIR=LOCAL_Y W=-10000
 # MEMBER_LOAD element_id TYPE=POINT DIR=LOCAL_Y P=-20000 A=2.5
+# AXIS_OFFSET element_id I_LOCAL_Y=0.0 J_LOCAL_Y=0.0
 # SETTLEMENT node_id UX=0 UY=-0.002 RZ=0
 # MASS node_id UX=10000 UY=0 RZ=0
 
@@ -182,6 +265,7 @@ THERMAL element_id T_UNIFORM=50
 THERMAL element_id T_TOP=0 T_BOTTOM=50
 MEMBER_LOAD element_id TYPE=UDL DIR=LOCAL_Y W=-10000
 MEMBER_LOAD element_id TYPE=POINT DIR=LOCAL_Y P=-20000 A=2.5
+AXIS_OFFSET element_id I_LOCAL_Y=0.0 J_LOCAL_Y=0.0
 SETTLEMENT node_id UX=0 UY=-0.002 RZ=0
 MASS node_id UX=10000 UY=0 RZ=0
 
@@ -211,7 +295,11 @@ class StaticAnalysisApp:
         self.model_builder = ModelBuilder()
         self.static_result: dict[str, Any] | None = None
         self.modal_result: dict[str, Any] | None = None
+        self.rha_result: dict[str, Any] | None = None
+        self.rsa_result: dict[str, Any] | None = None
         self.current_table: dict[str, Any] | None = None
+        self.selected_rha_node: int | None = None
+        self.selected_rha_dof: str = "ux"
         self.selected_nodes: set[int] = set()
         self.selected_elements: set[int] = set()
         self._selection_drag_start: tuple[float, float] | None = None
@@ -223,6 +311,9 @@ class StaticAnalysisApp:
         self.default_mass = tk.StringVar(value="10000.0")
         self.num_modes = tk.StringVar(value="4")
         self.mode_scale = tk.StringVar(value="1.0")
+        self.modal_sign_convention = tk.StringVar(value="roof ux positive")
+        self.show_modal_values = tk.BooleanVar(value=False)
+        self.coordinate_status = tk.StringVar(value="outside axes")
 
         self.figure = Figure(figsize=(7.0, 5.0), dpi=100)
         self.ax = self.figure.add_subplot(111)
@@ -261,12 +352,15 @@ class StaticAnalysisApp:
         define_menu.add_command(label="Nodes / Joints", command=self.define_nodes)
         define_menu.add_command(label="Frame Elements", command=self.define_frame_elements)
         define_menu.add_command(label="Truss Elements", command=self.define_truss_elements)
+        define_menu.add_command(label="Axis Offsets / Rigid End Offsets", command=self.define_axis_offsets)
         define_menu.add_command(label="Generate Frame Model", command=self.define_generate_frame_model)
         define_menu.add_command(label="Nodal Loads", command=self.define_nodal_loads)
         define_menu.add_command(label="Member Loads", command=self.define_member_loads)
         define_menu.add_command(label="Thermal Loads", command=self.define_thermal_loads)
         define_menu.add_command(label="Support Settlements", command=self.define_support_settlements)
         define_menu.add_command(label="Modal Masses", command=self.define_modal_masses)
+        define_menu.add_command(label="Modal Mass Source", command=self.define_modal_mass_source)
+        define_menu.add_command(label="Springs / Direct Stiffness", command=self.define_springs_direct_stiffness)
         define_menu.add_command(label="Analysis Options", command=self.define_analysis_options)
         define_menu.add_separator()
         define_menu.add_command(label="Show Model Summary", command=self.show_model_summary)
@@ -275,6 +369,10 @@ class StaticAnalysisApp:
         analyze_menu = tk.Menu(menu_bar, tearoff=False)
         analyze_menu.add_command(label="Run Static Analysis", command=self.run_analysis)
         analyze_menu.add_command(label="Run Modal Analysis", command=self.run_modal_analysis)
+        analyze_menu.add_command(label="Response Spectrum Analysis", command=self.open_response_spectrum_analysis)
+        analyze_menu.add_command(label="Response History Analysis", command=self.open_response_history_analysis)
+        analyze_menu.add_separator()
+        analyze_menu.add_command(label="Eigenanalysis Calculator", command=self.open_eigenanalysis_calculator)
         menu_bar.add_cascade(label="Analyze", menu=analyze_menu)
 
         display_menu = tk.Menu(menu_bar, tearoff=False)
@@ -284,31 +382,81 @@ class StaticAnalysisApp:
             "Model View",
             "Presentation Model View",
             "Deformed Shape",
+            "Hermite Deformed Shape",
             "Axial Force Diagram",
             "Shear Force Diagram",
             "Bending Moment Diagram",
+            "Section Force Stations",
+            "Deformed Slope Profile",
             "Story Drift Profile",
             "Drift Ratio Profile",
             "Floor Displacement Profile",
         ):
             static_menu.add_command(label=name, command=lambda plot=name: self.select_plot_type(plot))
         modal_menu = tk.Menu(display_menu, tearoff=False)
-        for name in ("Mode 1", "Mode 2", "Mode 3", "Mode 4", "Modal Frequencies", "Modal Periods"):
-            modal_menu.add_command(label=name, command=lambda plot=name: self.select_plot_type(plot))
+        for label, name in (
+            ("Mode 1", "Mode 1"),
+            ("Mode 2", "Mode 2"),
+            ("Mode 3", "Mode 3"),
+            ("Mode 4", "Mode 4"),
+            ("Frequencies, Hz", "Modal Frequencies"),
+            ("Angular Frequencies, rad/s", "Modal Angular Frequencies"),
+            ("Periods, s", "Modal Periods"),
+        ):
+            modal_menu.add_command(label=label, command=lambda plot=name: self.select_plot_type(plot))
+        rha_menu = tk.Menu(display_menu, tearoff=False)
+        for label, name in (
+            ("Ground Motion", "RHA Ground Motion"),
+            ("Roof Displacement History", "RHA Roof Displacement History"),
+            ("Floor Displacement Histories", "RHA Floor Displacement Histories"),
+            ("Story Drift Histories", "RHA Story Drift Histories"),
+            ("Peak Story Drift Envelope", "RHA Peak Story Drift Envelope"),
+            ("Modal Coordinate Histories", "RHA Modal Coordinate Histories"),
+            ("Selected Node Response History", "RHA Selected Node Response History"),
+        ):
+            rha_menu.add_command(label=label, command=lambda plot=name: self.select_plot_type(plot))
+        rsa_menu = tk.Menu(display_menu, tearoff=False)
+        for label, name in (
+            ("Modal Peak Roof Response", "RSA Modal Peak Roof Response"),
+            ("Modal Peak Story Drift", "RSA Modal Peak Story Drift"),
+            ("Combined Roof Response", "RSA Combined Roof Response"),
+            ("Combined Story Drift Envelope", "RSA Combined Story Drift Envelope"),
+        ):
+            rsa_menu.add_command(label=label, command=lambda plot=name: self.select_plot_type(plot))
         display_menu.add_cascade(label="Static", menu=static_menu)
         display_menu.add_cascade(label="Modal", menu=modal_menu)
+        display_menu.add_cascade(label="RSA", menu=rsa_menu)
+        display_menu.add_cascade(label="RHA", menu=rha_menu)
         menu_bar.add_cascade(label="Display", menu=display_menu)
 
         tables_menu = tk.Menu(menu_bar, tearoff=False)
         tables_menu.add_command(label="Nodal Displacements", command=self.show_nodal_displacements_table)
         tables_menu.add_command(label="Support Reactions", command=self.show_support_reactions_table)
         tables_menu.add_command(label="Member-End Forces", command=self.show_member_end_forces_table)
+        tables_menu.add_command(label="Element Station Forces", command=self.show_element_station_forces_table)
+        tables_menu.add_command(label="Element Deformed Slopes", command=self.show_element_deformed_slopes_table)
+        tables_menu.add_separator()
+        tables_menu.add_command(label="Solver Diagnostics", command=self.show_solver_diagnostics_table)
         tables_menu.add_separator()
         tables_menu.add_command(label="Story Drift Table", command=self.show_story_drift_table)
         tables_menu.add_command(label="Roof Displacement", command=self.show_roof_displacement_table)
         tables_menu.add_separator()
         tables_menu.add_command(label="Modal Frequencies", command=self.show_modal_frequencies_table)
         tables_menu.add_command(label="Modal Participation Factors", command=self.show_modal_participation_table)
+        tables_menu.add_command(label="Modal Properties", command=self.show_modal_properties_table)
+        tables_menu.add_command(label="Modal DOF Classification", command=self.show_modal_dof_classification_table)
+        tables_menu.add_command(label="Condensed Modal Matrices", command=self.show_condensed_modal_matrices_table)
+        tables_menu.add_command(label="Full Mode Shapes", command=self.show_full_mode_shapes_table)
+        tables_menu.add_command(label="Modal Mass Summary", command=self.show_modal_mass_summary_table)
+        tables_menu.add_separator()
+        tables_menu.add_command(label="RHA Summary", command=self.show_rha_summary_table)
+        tables_menu.add_command(label="RHA Peak Floor Responses", command=self.show_rha_peak_floor_responses_table)
+        tables_menu.add_command(label="RHA Peak Story Drifts", command=self.show_rha_peak_story_drifts_table)
+        tables_menu.add_command(label="RHA Node Peak Responses", command=self.show_rha_node_peak_responses_table)
+        tables_menu.add_separator()
+        tables_menu.add_command(label="RSA Modal Peak Responses", command=self.show_rsa_modal_peak_responses_table)
+        tables_menu.add_command(label="RSA Modal Peak Story Drifts", command=self.show_rsa_modal_peak_story_drifts_table)
+        tables_menu.add_command(label="RSA Combined Responses", command=self.show_rsa_combined_responses_table)
         tables_menu.add_separator()
         tables_menu.add_command(label="Export Current Table to CSV", command=self.export_current_table)
         menu_bar.add_cascade(label="Tables", menu=tables_menu)
@@ -349,7 +497,24 @@ class StaticAnalysisApp:
         tk.Spinbox(top, from_=1, to=4, textvariable=self.num_modes, width=4).pack(side=tk.LEFT, padx=(4, 8))
 
         tk.Label(top, text="Mode scale:").pack(side=tk.LEFT)
-        tk.Entry(top, textvariable=self.mode_scale, width=7).pack(side=tk.LEFT, padx=(4, 12))
+        tk.Entry(top, textvariable=self.mode_scale, width=7).pack(side=tk.LEFT, padx=(4, 8))
+
+        tk.Checkbutton(
+            top,
+            text="Show mode values",
+            variable=self.show_modal_values,
+            command=self._redraw_current_plot,
+        ).pack(side=tk.LEFT, padx=(0, 8))
+
+        tk.Label(top, text="Mode sign:").pack(side=tk.LEFT)
+        tk.OptionMenu(
+            top,
+            self.modal_sign_convention,
+            "roof ux positive",
+            "largest component positive",
+            "raw",
+            command=lambda _value: self._redraw_current_plot(),
+        ).pack(side=tk.LEFT, padx=(4, 12))
 
         tk.Label(top, text="Result View:").pack(side=tk.LEFT)
         self.plot_menu = tk.OptionMenu(top, self.plot_type, *PLOT_TYPES, command=self.on_plot_type_changed)
@@ -363,6 +528,12 @@ class StaticAnalysisApp:
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
         self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        tk.Label(plot_frame, textvariable=self.coordinate_status, anchor=tk.W).pack(
+            side=tk.BOTTOM,
+            fill=tk.X,
+            padx=4,
+            pady=(2, 4),
+        )
         self._connect_selection_events()
 
         summary_frame = tk.Frame(body, width=260, padx=8, pady=8)
@@ -479,6 +650,9 @@ class StaticAnalysisApp:
         self.model_builder.load_from_structure_dict(data, mass_mapping)
         self.static_result = None
         self.modal_result = None
+        self.rha_result = None
+        self.rsa_result = None
+        self.selected_rha_node = None
         self.current_table = None
         self.clear_selection(redraw=False)
         self._draw_empty_canvas()
@@ -676,6 +850,13 @@ class StaticAnalysisApp:
 
             modal = solve_modal_analysis(structure, mass_mapping, n_modes=n_modes)
             self.modal_result = package_modal_results(modal, structure)
+            self.modal_result["mass_source_summary"] = mass_mapping_summary(
+                mass_mapping,
+                source_type=self._modal_mass_source_type(mass_mapping),
+            )
+            self.rha_result = None
+            self.rsa_result = None
+            self.selected_rha_node = None
             self.current_table = None
             if self.plot_type.get() not in MODAL_PLOT_TYPES:
                 self.plot_type.set("Mode 1")
@@ -683,7 +864,47 @@ class StaticAnalysisApp:
             self._update_summary()
         except Exception as exc:
             self.modal_result = None
+            self.rha_result = None
+            self.rsa_result = None
+            self.selected_rha_node = None
             self._show_error("Modal analysis failed", exc)
+
+    def open_eigenanalysis_calculator(self) -> None:
+        open_eigen_calculator_dialog(self.root)
+
+    def open_response_spectrum_analysis(self) -> None:
+        open_rsa_dialog(self.root, self.modal_result, self.model_data, self._on_rsa_complete)
+
+    def open_response_history_analysis(self) -> None:
+        open_rha_dialog(self.root, self.modal_result, self._on_rha_complete)
+
+    def open_selected_node_response_history(self) -> None:
+        open_rha_node_dialog(self.root, self.rha_result, self._plot_selected_node_response)
+
+    def _plot_selected_node_response(self, node_id: int, dof: str) -> None:
+        if self.rha_result is None:
+            messagebox.showerror("No RHA results", "Run Response History Analysis before opening node response plots.")
+            return
+        self.selected_rha_node = int(node_id)
+        self.selected_rha_dof = str(dof).lower()
+        self.plot_type.set("RHA Selected Node Response History")
+        self._redraw_current_plot()
+        self._update_summary()
+
+    def _on_rsa_complete(self, result: dict[str, Any]) -> None:
+        self.rsa_result = result
+        self.current_table = None
+        self.plot_type.set("RSA Modal Peak Roof Response")
+        self._redraw_current_plot()
+        self._update_summary()
+
+    def _on_rha_complete(self, result: dict[str, Any]) -> None:
+        self.rha_result = result
+        self.selected_rha_node = None
+        self.current_table = None
+        self.plot_type.set("RHA Roof Displacement History")
+        self._redraw_current_plot()
+        self._update_summary()
 
     def _sync_model_source_if_needed(self) -> bool:
         if self.input_source == "text" and self.text_editor_widget is not None:
@@ -710,10 +931,16 @@ class StaticAnalysisApp:
         if data_changed:
             self.static_result = None
             self.modal_result = None
+            self.rha_result = None
+            self.rsa_result = None
+            self.selected_rha_node = None
             self.current_table = None
             self.clear_selection(redraw=False)
         elif masses_changed:
             self.modal_result = None
+            self.rha_result = None
+            self.rsa_result = None
+            self.selected_rha_node = None
             self.current_table = None
 
         self._apply_analysis_options_to_controls()
@@ -759,6 +986,14 @@ class StaticAnalysisApp:
             messagebox.showerror("No modal results", "Run modal analysis before selecting a modal result plot.")
             self.plot_type.set("Geometry")
             return
+        if plot_name in RHA_PLOT_TYPES and self.rha_result is None:
+            messagebox.showerror("No RHA results", "Run Response History Analysis before selecting an RHA plot.")
+            self.plot_type.set("Geometry")
+            return
+        if plot_name in RSA_PLOT_TYPES and self.rsa_result is None:
+            messagebox.showerror("No RSA results", "Run Response Spectrum Analysis before selecting an RSA plot.")
+            self.plot_type.set("Geometry")
+            return
 
         try:
             self._redraw_current_plot()
@@ -796,6 +1031,14 @@ class StaticAnalysisApp:
             if self.modal_result is None:
                 return
             self._draw_modal_plot(plot_name)
+        elif plot_name in RSA_PLOT_TYPES:
+            if self.rsa_result is None:
+                return
+            self._draw_rsa_plot(plot_name)
+        elif plot_name in RHA_PLOT_TYPES:
+            if self.rha_result is None:
+                return
+            self._draw_rha_plot(plot_name)
         else:
             raise ValueError(f"Unknown plot type: {plot_name}")
 
@@ -827,9 +1070,18 @@ class StaticAnalysisApp:
             if mode_index >= n_modes:
                 raise ValueError(f"{plot_name} is not available; modal analysis computed {n_modes} mode(s).")
             scale = _parse_positive_float(self.mode_scale.get(), "mode-shape scale")
-            plot_mode_shape(self.modal_result, mode_index=mode_index, scale=scale, ax=self.ax)
+            plot_mode_shape(
+                self.modal_result,
+                mode_index=mode_index,
+                scale=scale,
+                ax=self.ax,
+                show_values=bool(self.show_modal_values.get()),
+                sign_convention=self.modal_sign_convention.get(),
+            )
         elif plot_name == "Modal Frequencies":
             plot_modal_frequencies(self.modal_result, ax=self.ax)
+        elif plot_name == "Modal Angular Frequencies":
+            plot_modal_angular_frequencies(self.modal_result, ax=self.ax)
         elif plot_name == "Modal Periods":
             plot_modal_periods(self.modal_result, ax=self.ax)
         else:
@@ -847,10 +1099,43 @@ class StaticAnalysisApp:
         else:
             raise ValueError(f"Unknown drift plot type: {plot_name}")
 
+    def _draw_rsa_plot(self, plot_name: str) -> None:
+        if self.rsa_result is None:
+            return
+        if plot_name == "RSA Modal Peak Roof Response":
+            plot_rsa_modal_peak_roof_response(self.rsa_result, ax=self.ax)
+        elif plot_name == "RSA Modal Peak Story Drift":
+            plot_rsa_modal_peak_story_drift(self.rsa_result, ax=self.ax)
+        elif plot_name == "RSA Combined Roof Response":
+            plot_rsa_combined_roof_response(self.rsa_result, ax=self.ax)
+        elif plot_name == "RSA Combined Story Drift Envelope":
+            plot_rsa_combined_story_drift_envelope(self.rsa_result, ax=self.ax)
+        else:
+            raise ValueError(f"Unknown RSA plot type: {plot_name}")
+
+    def _draw_rha_plot(self, plot_name: str) -> None:
+        if self.rha_result is None:
+            return
+        if plot_name == "RHA Selected Node Response History":
+            if self.selected_rha_node is None:
+                self.open_selected_node_response_history()
+                return
+            plot_node_response_history(self.rha_result, self.selected_rha_node, self.selected_rha_dof, ax=self.ax)
+            return
+        mapping = {
+            "RHA Ground Motion": plot_ground_motion_history,
+            "RHA Roof Displacement History": plot_roof_displacement_history,
+            "RHA Floor Displacement Histories": plot_floor_displacement_histories,
+            "RHA Story Drift Histories": plot_story_drift_histories,
+            "RHA Peak Story Drift Envelope": plot_peak_story_drift_envelope,
+            "RHA Modal Coordinate Histories": plot_modal_coordinate_histories,
+        }
+        mapping[plot_name](self.rha_result, ax=self.ax)
+
     def _static_plot_scale(self, plot_name: str) -> float:
-        if plot_name == "Deformed Shape":
+        if plot_name in {"Deformed Shape", "Hermite Deformed Shape"}:
             return float(self.model_builder.analysis_options["static_deformation_scale"])
-        if plot_name in {"Axial Force Diagram", "Shear Force Diagram", "Bending Moment Diagram"}:
+        if plot_name in {"Axial Force Diagram", "Shear Force Diagram", "Bending Moment Diagram", "Section Force Stations"}:
             return float(self.model_builder.analysis_options["force_diagram_scale"])
         return PLOT_SCALES.get(plot_name, 1.0)
 
@@ -919,6 +1204,12 @@ class StaticAnalysisApp:
             else:
                 lines.extend(["", "Modal analysis: not run"])
                 lines.append(self._pre_modal_mass_message())
+
+            if self.rsa_result is not None:
+                lines.extend(self._rsa_summary_lines())
+
+            if self.rha_result is not None:
+                lines.extend(self._rha_summary_lines())
 
             summary = "\n".join(lines)
 
@@ -995,6 +1286,14 @@ class StaticAnalysisApp:
         if not self.static_result.get("displacements"):
             raise ValueError("No displacement data are available for drift results.")
 
+    def _has_frame_elements(self) -> bool:
+        if self.static_result is None:
+            return False
+        return any(
+            str(element.get("type", "")).lower() == "frame"
+            for element in self.static_result.get("elements", {}).values()
+        )
+
     def _drift_summary_lines(self) -> list[str]:
         if self.static_result is None or self.plot_type.get() not in DRIFT_PLOT_TYPES:
             return []
@@ -1031,6 +1330,7 @@ class StaticAnalysisApp:
         self._remove_selection_rectangle()
 
     def _on_canvas_motion(self, event: Any) -> None:
+        self._update_coordinate_status(event)
         if self._selection_drag_start is None or event.inaxes != self.ax or event.xdata is None or event.ydata is None:
             return
         if self._selection_drag_start_pixel is None:
@@ -1230,7 +1530,14 @@ class StaticAnalysisApp:
         return nodes, elements
 
     def _selection_supported_plot(self) -> bool:
-        return self.plot_type.get() not in {"Modal Frequencies", "Modal Periods"} | DRIFT_PLOT_TYPES
+        unsupported = {"Modal Frequencies", "Modal Angular Frequencies", "Modal Periods"} | DRIFT_PLOT_TYPES | RHA_PLOT_TYPES
+        return self.plot_type.get() not in unsupported
+
+    def _update_coordinate_status(self, event: Any) -> None:
+        if event.inaxes == self.ax:
+            self.coordinate_status.set(format_canvas_coordinates(event.xdata, event.ydata))
+        else:
+            self.coordinate_status.set("outside axes")
 
     def _update_selection_panel(self) -> None:
         if self.selection_text is None:
@@ -1364,6 +1671,47 @@ class StaticAnalysisApp:
         headers, rows = format_member_force_rows(self.static_result)
         self._open_result_table("Member-End Forces", headers, rows)
 
+    def show_element_station_forces_table(self) -> None:
+        if self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis first.")
+            return
+        if not self._has_frame_elements():
+            messagebox.showerror(
+                "No frame elements",
+                "Station force postprocessing is available for frame elements.",
+            )
+            return
+        headers, rows = format_element_station_force_rows(self.static_result)
+        self._open_result_table("Element Station Forces", headers, rows)
+
+    def show_element_deformed_slopes_table(self) -> None:
+        if self.static_result is None:
+            messagebox.showerror("No static results", "Run static analysis first.")
+            return
+        if not self._has_frame_elements():
+            messagebox.showerror(
+                "No frame elements",
+                "Station slope postprocessing is available for frame elements.",
+            )
+            return
+        headers, rows = format_element_deformed_slope_rows(self.static_result)
+        self._open_result_table("Element Deformed Slopes", headers, rows)
+
+    def show_solver_diagnostics_table(self) -> None:
+        if not self._sync_model_source_if_needed():
+            return
+        if self.model_data is None:
+            messagebox.showerror("No model loaded", "Load or define a model before opening solver diagnostics.")
+            return
+        try:
+            structure = Structure.from_dict(self.model_data)
+            diagnostics = compute_solver_diagnostics(structure)
+            headers, rows = format_solver_diagnostics_table_rows(diagnostics)
+        except Exception as exc:
+            self._show_error("Solver diagnostics failed", exc)
+            return
+        self._open_result_table("Solver Diagnostics", headers, rows)
+
     def show_story_drift_table(self) -> None:
         if self.static_result is None:
             messagebox.showerror("No static results", "Run static analysis before opening drift results.")
@@ -1408,6 +1756,93 @@ class StaticAnalysisApp:
             return
         self._open_result_table("Modal Participation Factors", headers, rows)
 
+    def show_modal_properties_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            return
+        headers, rows = format_modal_properties_rows(self._modal_display_result())
+        self._open_result_table("Modal Properties", headers, rows)
+
+    def show_modal_dof_classification_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            return
+        headers, rows = format_modal_dof_classification_rows(self.modal_result)
+        self._open_result_table("Modal DOF Classification", headers, rows)
+
+    def show_condensed_modal_matrices_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            return
+        headers, rows = format_condensed_modal_matrix_rows(self.modal_result)
+        self._open_result_table("Condensed Modal Matrices", headers, rows)
+
+    def show_full_mode_shapes_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            return
+        headers, rows = format_full_mode_shape_rows(self._modal_display_result())
+        self._open_result_table("Full Mode Shapes", headers, rows)
+
+    def show_modal_mass_summary_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            return
+        headers, rows = format_modal_mass_summary_rows(self.modal_result)
+        self._open_result_table("Modal Mass Summary", headers, rows)
+
+    def show_rha_summary_table(self) -> None:
+        if self.rha_result is None:
+            messagebox.showerror("No RHA results", "Run Response History Analysis before opening RHA tables.")
+            return
+        headers, rows = format_rha_summary_table_rows(self.rha_result)
+        self._open_result_table("RHA Summary", headers, rows)
+
+    def show_rha_peak_floor_responses_table(self) -> None:
+        if self.rha_result is None:
+            messagebox.showerror("No RHA results", "Run Response History Analysis before opening RHA tables.")
+            return
+        headers, rows = format_rha_peak_floor_response_rows(self.rha_result)
+        self._open_result_table("RHA Peak Floor Responses", headers, rows)
+
+    def show_rha_peak_story_drifts_table(self) -> None:
+        if self.rha_result is None:
+            messagebox.showerror("No RHA results", "Run Response History Analysis before opening RHA tables.")
+            return
+        headers, rows = format_rha_peak_story_drift_rows(self.rha_result)
+        self._open_result_table("RHA Peak Story Drifts", headers, rows)
+
+    def show_rha_node_peak_responses_table(self) -> None:
+        if self.rha_result is None:
+            messagebox.showerror("No RHA results", "Run Response History Analysis before opening RHA tables.")
+            return
+        headers, rows = format_rha_node_peak_response_rows(self.rha_result)
+        self._open_result_table("RHA Node Peak Responses", headers, rows)
+
+    def show_rsa_modal_peak_responses_table(self) -> None:
+        if self.rsa_result is None:
+            messagebox.showerror("No RSA results", "Run Response Spectrum Analysis before opening RSA tables.")
+            return
+        headers, rows = format_rsa_modal_peak_response_rows(self.rsa_result)
+        self._open_result_table("RSA Modal Peak Responses", headers, rows)
+
+    def show_rsa_modal_peak_story_drifts_table(self) -> None:
+        if self.rsa_result is None:
+            messagebox.showerror("No RSA results", "Run Response Spectrum Analysis before opening RSA tables.")
+            return
+        headers, rows = format_rsa_modal_peak_story_drift_rows(self.rsa_result)
+        self._open_result_table("RSA Modal Peak Story Drifts", headers, rows)
+
+    def show_rsa_combined_responses_table(self) -> None:
+        if self.rsa_result is None:
+            messagebox.showerror(
+                "No RSA results",
+                "Run Response Spectrum Analysis before opening RSA combined responses.",
+            )
+            return
+        headers, rows = format_rsa_combined_response_rows(self.rsa_result)
+        self._open_result_table("RSA Combined Responses", headers, rows)
+
     def export_current_table(self) -> None:
         if self.current_table is None:
             messagebox.showerror("No table", "No table is currently available for export.")
@@ -1446,8 +1881,20 @@ class StaticAnalysisApp:
             "",
             "Modal analysis: run",
             f"Modes computed: {len(self.modal_result['frequencies_hz'])}",
+            f"Mode-shape sign convention: {self.modal_sign_convention.get()}",
             mass_assumption,
         ]
+        mass_summary = self.modal_result.get("mass_source_summary", {})
+        if mass_summary:
+            lines.extend(
+                [
+                    f"Mass source: {mass_summary.get('source_type', 'unknown')}",
+                    f"Nodes with modal mass: {mass_summary.get('node_count', 0)}",
+                    f"Total ux mass: {float(mass_summary.get('total_ux_mass', 0.0)):.6g}",
+                    f"Total uy mass: {float(mass_summary.get('total_uy_mass', 0.0)):.6g}",
+                    f"Total rz mass/inertia: {float(mass_summary.get('total_rz_mass', 0.0)):.6g}",
+                ]
+            )
 
         freq_preview = self.modal_result["frequency_table"][:4]
         if freq_preview:
@@ -1472,6 +1919,44 @@ class StaticAnalysisApp:
 
         return lines
 
+    def _rsa_summary_lines(self) -> list[str]:
+        if self.rsa_result is None:
+            return []
+        lines = [
+            "",
+            "RSA: run",
+            f"Modes used: {self.rsa_result.get('modes_used', '')}",
+        ]
+        peak_rows = self.rsa_result.get("modal_peak_rows", [])[:4]
+        if peak_rows:
+            lines.append("RSA peak roof ux by mode:")
+            for row in peak_rows:
+                lines.append(f"  Mode {row.get('mode')}: {float(row.get('peak_roof_ux', 0.0)):.6e}")
+        warnings = self.rsa_result.get("warnings", [])
+        if warnings:
+            lines.append(f"RSA warnings: {len(warnings)}")
+        return lines
+
+    def _rha_summary_lines(self) -> list[str]:
+        if self.rha_result is None:
+            return []
+        roof = self.rha_result.get("peak_roof_displacement", {})
+        peak_story = max(
+            self.rha_result.get("peak_story_drifts", []),
+            key=lambda row: row.get("peak_absolute", 0.0),
+            default={},
+        )
+        return [
+            "",
+            "RHA: run",
+            f"Record: {Path(str(self.rha_result.get('record_name', ''))).name}",
+            f"Modes used: {self.rha_result.get('modes_used', '')}",
+            f"Damping ratio: {self.rha_result.get('damping_ratio', '')}",
+            f"PGA: {float(self.rha_result.get('pga_mps2', 0.0)):.6g} m/s2",
+            f"Peak roof ux: {float(roof.get('value', 0.0)):.6e}",
+            f"Max |story drift|: {float(peak_story.get('peak_absolute', 0.0)):.6e}",
+        ]
+
     def _generated_mass_message(self) -> str:
         if self.text_mass_mapping:
             return "Generated floor masses assigned to ux DOFs."
@@ -1486,6 +1971,18 @@ class StaticAnalysisApp:
         if self.input_source == "generated":
             return "Mass assumption: generated floor masses assigned to ux DOFs."
         return "Mass assumption: using modal mass records from text/form model."
+
+    def _modal_mass_source_type(self, mass_mapping: dict[int, dict[str, float]]) -> str:
+        if self.input_source == "generated" and self.text_mass_mapping:
+            return "generated model companion mass file"
+        if self.text_mass_mapping:
+            return getattr(self.model_builder, "modal_mass_source_type", "manual")
+        if mass_mapping:
+            return "default free-ux fallback"
+        return "none"
+
+    def _modal_display_result(self) -> dict[str, Any]:
+        return apply_mode_shape_sign_convention(self.modal_result, self.modal_sign_convention.get())
 
     def _thermal_load_count(self) -> int:
         if self.model_data is None:
@@ -1506,6 +2003,11 @@ class StaticAnalysisApp:
             for load in element.get("member_loads", [])
             if str(load.get("type", "")).lower() in {"udl", "point"}
         )
+
+    def _axis_offset_count(self) -> int:
+        if self.model_data is None:
+            return 0
+        return sum(1 for element in self.model_data.get("elements", []) if element.get("axis_offset"))
 
     def _settlement_count(self) -> int:
         if self.model_data is None:
@@ -1539,6 +2041,10 @@ class StaticAnalysisApp:
         self._ensure_form_source()
         open_truss_elements_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
 
+    def define_axis_offsets(self) -> None:
+        self._ensure_form_source()
+        open_axis_offsets_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
+
     def define_generate_frame_model(self) -> None:
         open_frame_generator_dialog(self.root, self._load_generated_frame_model)
 
@@ -1561,6 +2067,13 @@ class StaticAnalysisApp:
     def define_modal_masses(self) -> None:
         self._ensure_form_source()
         open_modal_masses_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
+
+    def define_modal_mass_source(self) -> None:
+        self._ensure_form_source()
+        open_modal_mass_source_dialog(self.root, self.model_builder, on_change=self._refresh_model_from_builder)
+
+    def define_springs_direct_stiffness(self) -> None:
+        open_springs_direct_stiffness_dialog(self.root)
 
     def define_analysis_options(self) -> None:
         self._ensure_form_source()
@@ -1598,6 +2111,7 @@ class StaticAnalysisApp:
                     f"Nodal loads: {len(self.model_data.get('nodal_loads', []))}",
                     f"Member loads: {self._mechanical_member_load_count()}",
                     f"Thermal loads: {self._thermal_load_count()}",
+                    f"Axis offset records: {self._axis_offset_count()}",
                     f"Support settlements: {self._settlement_count()}",
                     f"Text MASS records: {mass_count}",
                 ]
@@ -1621,7 +2135,9 @@ class StaticAnalysisApp:
             "This is a simplified SAP-like postprocessor. It does not include mouse-based drawing, "
             "nonlinear analysis, staged construction, time history, P-Delta, design checks, "
             "load combinations, or full SAP2000-style tables. Selection highlights are available on "
-            "geometry-shaped plots, not modal frequency/period bar charts.",
+            "geometry-shaped plots, not modal frequency/period bar charts.\n\n"
+            "Eigenvector sign is arbitrary; mode shapes may be multiplied by -1 without changing "
+            "the physical mode. The GUI sign convention only changes displayed mode-shape plots and tables.",
         )
 
     def show_about(self) -> None:
@@ -1698,11 +2214,18 @@ def _static_plot_function(plot_name: str) -> Callable[..., Any]:
     mapping = {
         "Geometry": plot_geometry,
         "Deformed Shape": plot_deformed_shape,
+        "Hermite Deformed Shape": plot_hermite_deformed_shape,
         "Axial Force Diagram": plot_axial_force_diagram,
         "Shear Force Diagram": plot_shear_force_diagram,
         "Bending Moment Diagram": plot_bending_moment_diagram,
+        "Section Force Stations": plot_section_force_stations,
+        "Deformed Slope Profile": _plot_slope_profile_no_scale,
     }
     return mapping[plot_name]
+
+
+def _plot_slope_profile_no_scale(result: dict[str, Any], scale: float = 1.0, ax=None):
+    return plot_deformed_slope_profile(result, ax=ax)
 
 
 def _compact_id_line(label: str, ids: set[int]) -> str:
@@ -1718,6 +2241,13 @@ def _format_ids(ids: list[int], limit: int = 8) -> str:
     if len(values) > limit:
         text += ", ..."
     return text
+
+
+def format_canvas_coordinates(x: Any, y: Any) -> str:
+    """Return a compact status string for Matplotlib hover coordinates."""
+    if x is None or y is None:
+        return "outside axes"
+    return f"x = {float(x):.4g}, y = {float(y):.4g}"
 
 
 def main() -> None:

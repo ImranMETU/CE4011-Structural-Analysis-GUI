@@ -428,6 +428,7 @@ class Structure:
             elem_type = ed["type"].lower()
             if elem_type == "frame":
                 releases = ed.get("releases", {})
+                axis_offset = ed.get("axis_offset", {}) or {}
                 elem = FrameElement(
                     ed["id"],
                     node_i,
@@ -436,8 +437,12 @@ class Structure:
                     section,
                     release_start=releases.get("start", False),
                     release_end=releases.get("end", False),
+                    axis_offset_i=axis_offset.get("i_local_y", 0.0),
+                    axis_offset_j=axis_offset.get("j_local_y", 0.0),
                 )
             elif elem_type == "truss":
+                if ed.get("axis_offset"):
+                    raise ValueError("Axis offsets are supported for frame elements only.")
                 elem = TrussElement(ed["id"], node_i, node_j, material, section)
             else:
                 raise ValueError(f"Unknown element type: {ed['type']}")

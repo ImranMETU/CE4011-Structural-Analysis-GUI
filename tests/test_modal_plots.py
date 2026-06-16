@@ -22,6 +22,7 @@ for path in (SRC_ROOT, ROOT):
 
 from postprocessing.modal_results import package_modal_results  # noqa: E402
 from visualization.modal_plots import (  # noqa: E402
+    plot_modal_angular_frequencies,
     plot_modal_frequencies,
     plot_modal_periods,
     plot_mode_shape,
@@ -56,7 +57,7 @@ def _packaged_modal_result():
 def test_modal_plot_functions_return_figure_and_axes():
     result = _packaged_modal_result()
 
-    for plot_func in (plot_mode_shape, plot_modal_frequencies, plot_modal_periods):
+    for plot_func in (plot_mode_shape, plot_modal_frequencies, plot_modal_angular_frequencies, plot_modal_periods):
         fig, ax = plot_func(result)
         assert isinstance(fig, Figure)
         assert isinstance(ax, Axes)
@@ -79,6 +80,7 @@ def test_modal_plot_figures_can_be_saved(tmp_path):
     plot_cases = [
         ("mode_1.png", plot_mode_shape, {"mode_index": 0, "scale": 0.5}),
         ("frequencies.png", plot_modal_frequencies, {}),
+        ("angular_frequencies.png", plot_modal_angular_frequencies, {}),
         ("periods.png", plot_modal_periods, {}),
     ]
 
@@ -90,3 +92,12 @@ def test_modal_plot_figures_can_be_saved(tmp_path):
 
         assert output_path.exists()
         assert output_path.stat().st_size > 0
+
+
+def test_mode_shape_value_labels_can_be_displayed():
+    result = _packaged_modal_result()
+
+    fig, ax = plot_mode_shape(result, mode_index=0, show_values=True)
+
+    assert any("phi_x=" in text.get_text() for text in ax.texts)
+    plt.close(fig)

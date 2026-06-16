@@ -36,11 +36,89 @@ def package_modal_results(
         "period_table": period_table(modal_result),
         "participation": calculate_modal_participation(modal_result, excitation_dof),
         "free_dof_map": free_dof_map,
+        "massive_dof_indices": list(modal_result.get("massive_dof_indices", [])),
+        "massless_dof_indices": list(modal_result.get("massless_dof_indices", [])),
+        "free_stiffness_matrix": modal_result.get("free_stiffness_matrix"),
+        "condensed_stiffness": modal_result.get("condensed_stiffness"),
+        "condensed_mass_matrix": modal_result.get("condensed_mass_matrix"),
+        "active_mass_matrix": modal_result.get("active_mass_matrix"),
+        "matrix_diagnostics": dict(modal_result.get("matrix_diagnostics", {})),
+        "normalization": "max translational displacement for plotting",
         "nodes": _node_coordinates(structure, modal_result),
         "elements": _element_connectivity(structure, modal_result),
         "notes": list(modal_result.get("notes", [])),
     }
     return packaged
+
+
+def apply_mode_shape_sign_convention(
+    modal_result: dict[str, Any],
+    convention: str = "raw",
+) -> dict[str, Any]:
+    """Return a display copy with eigenvector signs adjusted by convention.
+
+    Eigenvector signs are arbitrary; this helper changes only displayed mode
+    shape arrays/tables, not eigenvalues or any solver output.
+    """
+    normalized = str(convention).strip().lower()
+    if normalized in {"", "raw"}:
+        return modal_result
+
+    signs = mode_shape_signs(modal_result, normalized)
+    out = dict(modal_result)
+    for key in ("full_free_mode_shapes", "normalized_full_free_mode_shapes"):
+        if key in modal_result and modal_result[key] is not None:
+            values = np.asarray(modal_result[key], dtype=float).copy()
+            for mode_idx, sign in enumerate(signs):
+                if mode_idx < values.shape[1]:
+                    values[:, mode_idx] *= sign
+            out[key] = values
+    for key in ("node_mode_shapes", "normalized_node_mode_shapes"):
+        if key in modal_result:
+            out[key] = _signed_node_modes(modal_result[key], signs)
+    out["display_sign_convention"] = convention
+    return out
+
+
+def mode_shape_signs(modal_result: dict[str, Any], convention: str = "raw") -> list[float]:
+    """Return one sign multiplier per mode for display conventions."""
+    normalized = str(convention).strip().lower()
+    node_modes = modal_result.get("node_mode_shapes", [])
+    modes = np.asarray(modal_result.get("full_free_mode_shapes", []), dtype=float)
+    n_modes = len(node_modes) if node_modes else (modes.shape[1] if modes.ndim == 2 else 0)
+    if normalized in {"", "raw"}:
+        return [1.0] * n_modes
+
+    signs = []
+    for mode_idx in range(n_modes):
+        value = None
+        if normalized in {"roof ux positive", "roof_ux_positive", "roof ux"}:
+            value = _roof_ux_value(modal_result, mode_idx)
+        if value is None or abs(value) <= 1.0e-14:
+            value = _largest_component_value(modal_result, mode_idx)
+        signs.append(-1.0 if value is not None and value < 0.0 else 1.0)
+    return signs
+
+
+def mode_shape_component_labels(
+    modal_result: dict[str, Any],
+    mode_index: int = 0,
+    normalized: bool = True,
+    convention: str = "raw",
+) -> dict[int, str]:
+    """Return compact node labels for mode-shape components."""
+    display = apply_mode_shape_sign_convention(modal_result, convention)
+    key = "normalized_node_mode_shapes" if normalized else "node_mode_shapes"
+    modes = display.get(key, [])
+    if mode_index < 0 or mode_index >= len(modes):
+        raise IndexError(f"mode_index {mode_index} out of range for {len(modes)} mode(s).")
+    labels = {}
+    for node_id, values in modes[mode_index].items():
+        labels[int(node_id)] = (
+            f"N{node_id}: phi_x={values.get('ux', 0.0):.3g}, "
+            f"phi_y={values.get('uy', 0.0):.3g}, phi_r={values.get('rz', 0.0):.3g}"
+        )
+    return labels
 
 
 def frequency_table(modal_result: dict[str, Any]) -> list[dict[str, float]]:
@@ -224,3 +302,44 @@ def _node_ids(
     if "nodes" in modal_result:
         return [int(node_id) for node_id in sorted(modal_result["nodes"])]
     return sorted({int(item["node"]) for item in free_dof_map})
+
+
+def _signed_node_modes(node_modes: list[dict[int, dict[str, float]]], signs: list[float]) -> list[dict[int, dict[str, float]]]:
+    out = []
+    for mode_idx, mode in enumerate(node_modes):
+        sign = signs[mode_idx] if mode_idx < len(signs) else 1.0
+        out.append(
+            {
+                int(node_id): {dof: float(value) * sign for dof, value in values.items()}
+                for node_id, values in mode.items()
+            }
+        )
+    return out
+
+
+def _roof_ux_value(modal_result: dict[str, Any], mode_idx: int) -> float | None:
+    nodes = modal_result.get("nodes", {})
+    node_modes = modal_result.get("node_mode_shapes", [])
+    if not nodes or mode_idx >= len(node_modes):
+        return None
+    roof_y = max(float(node["y"]) for node in nodes.values())
+    roof_nodes = [
+        int(node_id)
+        for node_id, node in nodes.items()
+        if abs(float(node["y"]) - roof_y) <= 1.0e-8
+    ]
+    values = [
+        float(node_modes[mode_idx].get(node_id, {}).get("ux", 0.0))
+        for node_id in roof_nodes
+    ]
+    if not values:
+        return None
+    return max(values, key=lambda value: abs(value))
+
+
+def _largest_component_value(modal_result: dict[str, Any], mode_idx: int) -> float | None:
+    modes = np.asarray(modal_result.get("full_free_mode_shapes", []), dtype=float)
+    if modes.ndim != 2 or mode_idx >= modes.shape[1] or modes.shape[0] == 0:
+        return None
+    column = modes[:, mode_idx]
+    return float(column[int(np.argmax(np.abs(column)))])

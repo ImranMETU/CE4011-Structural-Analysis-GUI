@@ -5,6 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from analysis.mass_assembly import (
+    distribute_floor_mass_to_nodes,
+    lump_element_distributed_mass_to_nodes,
+    merge_mass_mappings,
+)
+
 
 def load_text_model(path: str | Path) -> tuple[dict[str, Any], dict[int, dict[str, float]]]:
     """Load a text model file into Structure.from_dict data and modal masses."""
@@ -45,12 +51,23 @@ def parse_text_model(text: str) -> tuple[dict[str, Any], dict[int, dict[str, flo
         elif keyword == "MASS":
             node_id, masses = _parse_mass(args, line_no)
             mass_mapping[node_id] = masses
+        elif keyword == "FLOOR_MASS":
+            masses = _parse_floor_mass(data, args, line_no)
+            mass_mapping = merge_mass_mappings(mass_mapping, masses)
+        elif keyword == "ELEMENT_MASS":
+            masses = _parse_element_mass(data, args, line_no)
+            mass_mapping = merge_mass_mappings(mass_mapping, masses)
+        elif keyword == "SPRING":
+            raise ValueError(f"Line {line_no}: SPRING input is not implemented; external nodal springs are deferred.")
         elif keyword == "THERMAL":
             element_id, load = _parse_thermal(args, line_no)
             _attach_thermal_load(data["elements"], element_id, load, line_no)
         elif keyword == "MEMBER_LOAD":
             element_id, load = _parse_member_load(args, line_no)
             _attach_member_load(data, element_id, load, line_no)
+        elif keyword == "AXIS_OFFSET":
+            element_id, axis_offset = _parse_axis_offset(args, line_no)
+            _attach_axis_offset(data["elements"], element_id, axis_offset, line_no)
         elif keyword == "SETTLEMENT":
             node_id, prescribed = _parse_settlement(args, line_no)
             _attach_settlement(data["nodes"], node_id, prescribed, line_no)
@@ -130,6 +147,38 @@ def _parse_mass(args: list[str], line_no: int) -> tuple[int, dict[str, float]]:
     }
 
 
+def _parse_floor_mass(data: dict[str, Any], args: list[str], line_no: int) -> dict[int, dict[str, float]]:
+    _require_len(args, 0, line_no, "FLOOR_MASS Y=... UX=... or UY=...")
+    props = _key_values(args, line_no)
+    if "Y" not in props:
+        raise ValueError(f"Line {line_no}: FLOOR_MASS requires Y=.")
+    direction, total = _mass_direction_value(props, line_no)
+    return distribute_floor_mass_to_nodes(data, float(props["Y"]), total, direction=direction)
+
+
+def _parse_element_mass(data: dict[str, Any], args: list[str], line_no: int) -> dict[int, dict[str, float]]:
+    _require_len(args, 1, line_no, "ELEMENT_MASS element_id M_PER_LENGTH=... DIR=UX")
+    props = _key_values(args[1:], line_no)
+    if "M_PER_LENGTH" not in props:
+        raise ValueError(f"Line {line_no}: ELEMENT_MASS requires M_PER_LENGTH=.")
+    direction = props.get("DIR", "UX").lower()
+    include_uy = props.get("INCLUDE_UY", "0").strip() in {"1", "true", "TRUE", "yes", "YES"}
+    return lump_element_distributed_mass_to_nodes(
+        data,
+        int(args[0]),
+        float(props["M_PER_LENGTH"]),
+        direction=direction,
+        include_uy=include_uy,
+    )
+
+
+def _mass_direction_value(props: dict[str, str], line_no: int) -> tuple[str, float]:
+    provided = [(key.lower(), float(props[key])) for key in ("UX", "UY", "RZ") if key in props]
+    if len(provided) != 1:
+        raise ValueError(f"Line {line_no}: provide exactly one of UX=, UY=, or RZ= for FLOOR_MASS.")
+    return provided[0]
+
+
 def _parse_thermal(args: list[str], line_no: int) -> tuple[int, dict[str, float | str]]:
     _require_len(args, 1, line_no, "THERMAL element_id T_UNIFORM=... or T_TOP=... T_BOTTOM=...")
     props = _key_values(args[1:], line_no)
@@ -169,12 +218,25 @@ def _parse_member_load(args: list[str], line_no: int) -> tuple[int, dict[str, fl
         if "W" not in props:
             raise ValueError(f"Line {line_no}: UDL MEMBER_LOAD requires W=.")
         load["w"] = float(props["W"])
+        if "X_START" in props:
+            load["x_start"] = float(props["X_START"])
+        if "X_END" in props:
+            load["x_end"] = float(props["X_END"])
     else:
         if "P" not in props or "A" not in props:
             raise ValueError(f"Line {line_no}: POINT MEMBER_LOAD requires P= and A=.")
         load["p"] = float(props["P"])
         load["a"] = float(props["A"])
     return int(args[0]), load
+
+
+def _parse_axis_offset(args: list[str], line_no: int) -> tuple[int, dict[str, float]]:
+    _require_len(args, 1, line_no, "AXIS_OFFSET element_id I_LOCAL_Y=... J_LOCAL_Y=...")
+    props = _key_values(args[1:], line_no)
+    return int(args[0]), {
+        "i_local_y": float(props.get("I_LOCAL_Y", 0.0)),
+        "j_local_y": float(props.get("J_LOCAL_Y", 0.0)),
+    }
 
 
 def _parse_settlement(args: list[str], line_no: int) -> tuple[int, dict[str, float]]:
@@ -206,7 +268,21 @@ def _attach_member_load(data: dict[str, Any], element_id: int, load: dict[str, A
         a = float(load["a"])
         if length is not None and (a < 0.0 or a > length):
             raise ValueError(f"Line {line_no}: point load location a must satisfy 0 <= a <= L ({length:.6g}).")
+        if length is None and a < 0.0:
+            raise ValueError(f"Line {line_no}: point load location a must be nonnegative.")
+    elif str(load.get("type", "")).lower() == "udl":
+        length = _element_length(data["nodes"], element)
+        _validate_full_span_udl_range(load, length, line_no)
     element.setdefault("member_loads", []).append(load)
+
+
+def _attach_axis_offset(elements: list[dict[str, Any]], element_id: int, axis_offset: dict[str, float], line_no: int) -> None:
+    element = _find_element(elements, element_id)
+    if element is None:
+        raise ValueError(f"Line {line_no}: AXIS_OFFSET references unknown element id {element_id}.")
+    if str(element.get("type", "")).lower() != "frame":
+        raise ValueError(f"Line {line_no}: axis offsets are supported for frame elements only.")
+    element["axis_offset"] = axis_offset
 
 
 def _attach_settlement(nodes: list[dict[str, Any]], node_id: int, prescribed: dict[str, float], line_no: int) -> None:
@@ -233,6 +309,26 @@ def _element_length(nodes: list[dict[str, Any]], element: dict[str, Any]) -> flo
     dx = float(node_j["x"]) - float(node_i["x"])
     dy = float(node_j["y"]) - float(node_i["y"])
     return (dx * dx + dy * dy) ** 0.5
+
+
+def _validate_full_span_udl_range(load: dict[str, Any], length: float | None, line_no: int) -> None:
+    has_start = "x_start" in load
+    has_end = "x_end" in load
+    if not has_start and not has_end:
+        return
+    if length is None:
+        raise ValueError(f"Line {line_no}: UDL range cannot be validated because element length is unavailable.")
+
+    start = float(load.get("x_start", 0.0))
+    end = float(load.get("x_end", length))
+    if start < 0.0 or end < 0.0 or start > end or end > length:
+        raise ValueError(f"Line {line_no}: invalid UDL range; require 0 <= X_START <= X_END <= L ({length:.6g}).")
+    if abs(start) > 1.0e-9 or abs(end - length) > 1.0e-9:
+        raise ValueError(
+            f"Line {line_no}: partial UDL range is not supported by the current backend. Use X_START=0 and X_END=L."
+        )
+    load.pop("x_start", None)
+    load.pop("x_end", None)
 
 
 def _key_values(tokens: list[str], line_no: int) -> dict[str, str]:

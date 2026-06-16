@@ -10,6 +10,16 @@ Point = tuple[float, float]
 Rect = tuple[float, float, float, float]
 
 
+def safe_remove_artist(artist: Any | None) -> None:
+    """Remove a Matplotlib artist if possible, ignoring stale artist states."""
+    if artist is None:
+        return
+    try:
+        artist.remove()
+    except (ValueError, NotImplementedError, RuntimeError, AttributeError):
+        pass
+
+
 def normalize_rectangle(rect: Rect) -> Rect:
     """Return rectangle as (xmin, ymin, xmax, ymax)."""
     x0, y0, x1, y1 = rect

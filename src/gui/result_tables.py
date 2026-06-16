@@ -19,6 +19,26 @@ from postprocessing.drift_results import (
     format_roof_displacement_rows,
     format_story_drift_rows,
 )
+from postprocessing.element_station_results import all_frame_station_results
+from postprocessing.modal_diagnostics import (
+    condensed_matrix_summary,
+    full_mode_shape_rows,
+    modal_dof_classification_rows,
+    modal_mass_summary,
+    modal_properties_rows,
+)
+from postprocessing.rha_results import (
+    format_peak_floor_response_rows,
+    format_peak_story_drift_rows,
+    format_rha_summary_rows,
+)
+from postprocessing.rha_node_results import compute_node_response_peaks, format_node_response_rows
+from postprocessing.rsa_results import (
+    rsa_combined_response_rows,
+    rsa_modal_peak_response_rows,
+    rsa_modal_peak_story_drift_rows,
+)
+from postprocessing.solver_diagnostics import format_solver_diagnostics_rows
 
 
 TableRows = list[list[str]]
@@ -86,6 +106,55 @@ def format_member_force_rows(static_result: dict[str, Any]) -> tuple[list[str], 
     return headers, rows
 
 
+def format_element_station_force_rows(
+    static_result: dict[str, Any],
+    n_stations: int = 11,
+) -> tuple[list[str], TableRows]:
+    """Return station-based frame section force table headers and rows."""
+    headers = ["Element", "Type", "Station", "xi", "x_local", "global_x", "global_y", "N", "V", "M"]
+    rows = []
+    for row in all_frame_station_results(static_result, n_stations=n_stations):
+        rows.append(
+            [
+                str(row.get("element", "")),
+                str(row.get("type", "")),
+                str(row.get("station", "")),
+                _format_number(row.get("xi", 0.0)),
+                _format_number(row.get("x_local", 0.0)),
+                _format_number(row.get("global_x", 0.0)),
+                _format_number(row.get("global_y", 0.0)),
+                _format_number(row.get("N", 0.0)),
+                _format_number(row.get("V", 0.0)),
+                _format_number(row.get("M", 0.0)),
+            ]
+        )
+    return headers, rows
+
+
+def format_element_deformed_slope_rows(
+    static_result: dict[str, Any],
+    n_stations: int = 11,
+) -> tuple[list[str], TableRows]:
+    """Return station-based Hermite displacement/slope table headers and rows."""
+    headers = ["Element", "Station", "xi", "x_local", "global_x", "global_y", "u_local", "v_local", "slope_rad"]
+    rows = []
+    for row in all_frame_station_results(static_result, n_stations=n_stations):
+        rows.append(
+            [
+                str(row.get("element", "")),
+                str(row.get("station", "")),
+                _format_number(row.get("xi", 0.0)),
+                _format_number(row.get("x_local", 0.0)),
+                _format_number(row.get("global_x", 0.0)),
+                _format_number(row.get("global_y", 0.0)),
+                _format_number(row.get("u_local", 0.0)),
+                _format_number(row.get("v_local", 0.0)),
+                _format_number(row.get("slope", 0.0)),
+            ]
+        )
+    return headers, rows
+
+
 def format_modal_frequency_rows(modal_result: dict[str, Any]) -> tuple[list[str], TableRows]:
     """Return modal frequency table headers and rows."""
     headers = ["Mode", "omega_rad_per_s", "frequency_Hz", "period_s"]
@@ -116,6 +185,207 @@ def format_modal_participation_rows(modal_result: dict[str, Any]) -> tuple[list[
             ]
         )
     return headers, rows
+
+
+def format_modal_properties_rows(modal_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return detailed modal properties table."""
+    headers = [
+        "Mode",
+        "lambda",
+        "omega_rad_per_s",
+        "frequency_Hz",
+        "period_s",
+        "Gamma",
+        "Modal Mass Mn",
+        "Modal Stiffness Kn",
+        "Effective Modal Mass",
+        "Effective Mass Ratio",
+        "Cumulative Mass Ratio",
+        "Normalization",
+        "Max Component",
+        "Controlling Node",
+        "Controlling DOF",
+    ]
+    rows = []
+    for row in modal_properties_rows(modal_result):
+        rows.append(
+            [
+                str(row.get("mode", "")),
+                _format_number(row.get("eigenvalue", "")),
+                _format_number(row.get("omega", "")),
+                _format_number(row.get("frequency_hz", "")),
+                _format_number(row.get("period", "")),
+                _format_number(row.get("gamma", "")),
+                _format_number(row.get("modal_mass", "")),
+                _format_number(row.get("modal_stiffness", "")),
+                _format_number(row.get("effective_modal_mass", "")),
+                _format_number(row.get("effective_modal_mass_ratio", "")),
+                _format_number(row.get("cumulative_effective_mass_ratio", "")),
+                str(row.get("normalization", "")),
+                _format_number(row.get("max_modal_component", "")),
+                str(row.get("controlling_node", "")),
+                str(row.get("controlling_dof", "")),
+            ]
+        )
+    return headers, rows
+
+
+def format_modal_dof_classification_rows(modal_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return modal DOF mass classification table."""
+    headers = ["Free DOF Index", "Node", "DOF", "Mass", "Classification", "Note"]
+    rows = []
+    for row in modal_dof_classification_rows(modal_result):
+        rows.append(
+            [
+                str(row.get("free_dof_index", "")),
+                str(row.get("node", "")),
+                str(row.get("dof", "")),
+                _format_number(row.get("mass", 0.0)),
+                str(row.get("classification", "")),
+                str(row.get("note", "")),
+            ]
+        )
+    return headers, rows
+
+
+def format_condensed_modal_matrix_rows(modal_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return matrix-level modal condensation diagnostics."""
+    headers = ["Property", "Value"]
+    summary = condensed_matrix_summary(modal_result)
+    keys = [
+        "free_stiffness_size",
+        "free_mass_size",
+        "massive_dof_count",
+        "massless_dof_count",
+        "condensed_stiffness_size",
+        "condensed_mass_size",
+        "condensed_stiffness_symmetry_error",
+        "condensed_mass_symmetry_error",
+        "kbb_condition_number",
+        "notes",
+    ]
+    rows = [[key, _format_number(summary[key]) if isinstance(summary.get(key), (float, int)) else str(summary.get(key, ""))] for key in keys]
+    return headers, rows
+
+
+def format_full_mode_shape_rows(modal_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return recovered full free-DOF mode shapes by node."""
+    headers = ["Mode", "Node", "ux", "uy", "rz"]
+    rows = []
+    for row in full_mode_shape_rows(modal_result):
+        rows.append(
+            [
+                str(row.get("mode", "")),
+                str(row.get("node", "")),
+                _format_number(row.get("ux", 0.0)),
+                _format_number(row.get("uy", 0.0)),
+                _format_number(row.get("rz", 0.0)),
+            ]
+        )
+    return headers, rows
+
+
+def format_modal_mass_summary_rows(modal_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return modal mass source and active-mass summary."""
+    headers = ["Property", "Value"]
+    summary = modal_mass_summary(modal_result, modal_result.get("mass_source_summary"))
+    rows = []
+    for key, value in summary.items():
+        rows.append([key, _format_number(value) if isinstance(value, (float, int)) else str(value)])
+    return headers, rows
+
+
+def format_rha_summary_table_rows(rha_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return RHA summary table headers and rows."""
+    return format_rha_summary_rows(rha_result)
+
+
+def format_rha_peak_floor_response_rows(rha_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return RHA peak floor response table headers and rows."""
+    return format_peak_floor_response_rows(rha_result)
+
+
+def format_rha_peak_story_drift_rows(rha_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return RHA peak story drift table headers and rows."""
+    return format_peak_story_drift_rows(rha_result)
+
+
+def format_rha_node_peak_response_rows(rha_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return RHA selected-node peak response table for available ux histories."""
+    return format_node_response_rows(compute_node_response_peaks(rha_result, dofs=("ux",)))
+
+
+def format_rsa_modal_peak_response_rows(rsa_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return RSA per-mode peak response table."""
+    headers = [
+        "Mode",
+        "Period s",
+        "Frequency Hz",
+        "Omega rad/s",
+        "Gamma",
+        "Sa",
+        "Sd",
+        "qmax",
+        "Peak Roof ux",
+        "Controlling Roof Node",
+    ]
+    rows = []
+    for row in rsa_modal_peak_response_rows(rsa_result):
+        rows.append(
+            [
+                str(row.get("mode", "")),
+                _format_number(row.get("period_s", 0.0)),
+                _format_number(row.get("frequency_hz", 0.0)),
+                _format_number(row.get("omega_rad_per_s", 0.0)),
+                _format_number(row.get("gamma", 0.0)),
+                _format_number(row.get("Sa", 0.0)),
+                _format_number(row.get("Sd", 0.0)),
+                _format_number(row.get("qmax", 0.0)),
+                _format_number(row.get("peak_roof_ux", 0.0)),
+                str(row.get("controlling_roof_node", "")),
+            ]
+        )
+    return headers, rows
+
+
+def format_rsa_modal_peak_story_drift_rows(rsa_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return RSA per-mode story drift table."""
+    headers = ["Mode", "Story", "Lower Elevation", "Upper Elevation", "Peak Story Drift", "Peak Drift Ratio"]
+    rows = []
+    for row in rsa_modal_peak_story_drift_rows(rsa_result):
+        rows.append(
+            [
+                str(row.get("mode", "")),
+                str(row.get("story", "")),
+                _format_number(row.get("lower_elevation", 0.0)),
+                _format_number(row.get("upper_elevation", 0.0)),
+                _format_number(row.get("peak_story_drift", 0.0)),
+                _format_number(row.get("peak_drift_ratio", 0.0)),
+            ]
+        )
+    return headers, rows
+
+
+def format_rsa_combined_response_rows(rsa_result: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return RSA ABSSUM/SRSS/CQC combined response table."""
+    headers = ["Quantity", "Location", "ABSSUM", "SRSS", "CQC"]
+    rows = []
+    for row in rsa_combined_response_rows(rsa_result):
+        rows.append(
+            [
+                str(row.get("quantity", "")),
+                str(row.get("location", "")),
+                _format_number(row.get("ABSSUM", 0.0)),
+                _format_number(row.get("SRSS", 0.0)),
+                _format_number(row.get("CQC", 0.0)),
+            ]
+        )
+    return headers, rows
+
+
+def format_solver_diagnostics_table_rows(diagnostics: dict[str, Any]) -> tuple[list[str], TableRows]:
+    """Return solver diagnostics table headers and rows."""
+    return format_solver_diagnostics_rows(diagnostics)
 
 
 def format_static_story_drift_rows(static_result: dict[str, Any]) -> tuple[list[str], TableRows]:
