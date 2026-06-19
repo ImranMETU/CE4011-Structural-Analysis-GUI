@@ -27,3 +27,7 @@ results/**/*.csv
 results/**/*.png
 *.log
 *.tmp
+
+# Windows executable packaging
+build/
+dist/

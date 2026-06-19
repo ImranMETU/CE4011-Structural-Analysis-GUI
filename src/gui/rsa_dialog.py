@@ -12,6 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 from analysis.modal_rsa import run_modal_rsa
 from analysis.response_spectrum_generator import generate_elastic_response_spectrum
 from ground_motion_loader import load_ground_motion
+from gui.runtime_paths import resource_root
 
 
 GROUND_MOTION_UNITS = ("cm/s2", "m/s2", "g")
@@ -167,6 +168,5 @@ def _available_modes(modal_result: dict[str, Any]) -> int:
 
 
 def _default_ground_motion_path() -> str:
-    root = Path(__file__).resolve().parents[2]
-    path = root / "inputs" / "groundmotion" / "DIN95Y01.THF"
+    path = resource_root() / "inputs" / "groundmotion" / "DIN95Y01.THF"
     return str(path) if path.exists() else ""

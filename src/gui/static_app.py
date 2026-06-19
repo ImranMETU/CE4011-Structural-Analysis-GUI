@@ -63,6 +63,7 @@ from gui.modal_response_options_dialog import open_modal_response_options_dialog
 from gui.rha_dialog import open_rha_dialog  # noqa: E402
 from gui.rha_node_dialog import open_rha_node_dialog  # noqa: E402
 from gui.rsa_dialog import open_rsa_dialog  # noqa: E402
+from gui.runtime_paths import resource_root  # noqa: E402
 from gui.result_tables import (  # noqa: E402
     format_condensed_modal_matrix_rows,
     format_element_deformed_slope_rows,
@@ -813,7 +814,7 @@ class StaticAnalysisApp:
         )
 
     def _load_example_text_model(self, relative_path: str) -> None:
-        path = Path(__file__).resolve().parents[2] / relative_path
+        path = resource_root() / relative_path
         try:
             data, mass_mapping = load_text_model(path)
             text = path.read_text(encoding="utf-8")

@@ -10,9 +10,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from generators.frame_generator import generate_floor_mass_mapping, generate_frame_model
+from gui.runtime_paths import resource_root
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = resource_root()
 GENERATED_DIR = PROJECT_ROOT / "inputs" / "generated"
 
 PROPOSAL_SPECS = [
