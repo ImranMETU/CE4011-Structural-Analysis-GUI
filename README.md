@@ -10,7 +10,11 @@ RUNNING THE DISTRIBUTED APPLICATION
 
    dist\CE4011_Solver\CE4011_Solver.exe
 
-3. Do not move CE4011_Solver.exe away from its adjacent _internal folder.
+   OR
+
+   Download from: https://drive.google.com/file/d/153He7D_wZ2FF9whGVxrezIJhlzXqVhss/view?usp=sharing
+
+4. Do not move CE4011_Solver.exe away from its adjacent _internal folder.
    The _internal folder contains python311.dll, Tcl/Tk, NumPy, SciPy,
    Matplotlib, and the bundled demonstration data.
 
