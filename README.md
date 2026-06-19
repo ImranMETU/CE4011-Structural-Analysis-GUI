@@ -1,6 +1,6 @@
 # CE4011 Structural Analysis GUI
 
-GUI-based static and modal postprocessing extension of a 2D frame-truss Direct Stiffness Method solver.
+![GUI-based static and modal postprocessing extension of a 2D frame-truss Direct Stiffness Method solver.](thumbnail.png)
 
 This project is an educational structural-analysis program for linear elastic two-dimensional frame and truss systems. It combines a Python computational backend with a Tkinter/Matplotlib graphical interface for model input, static analysis, modal analysis, result visualization, result tables, generated frame examples, verification cases, and selected linear modal response-history/response-spectrum utilities.
 
@@ -83,7 +83,7 @@ Modal outputs include:
 
 The figure below shows the first mode of excitation for a 5-storey frame.
 
-![Cantilever bending moment diagram](benchmarks/5story/Screenshot%202026-06-18%20015531.png)
+![Cantilever bending moment diagram](benchmarks/5story/mode1.png)
 
 ### Linear modal dynamic utilities
 
@@ -96,6 +96,12 @@ The project also includes selected educational modal postprocessing tools:
 - response-spectrum analysis with ABSSUM, SRSS, and CQC modal combination
 
 These utilities are linear modal postprocessing extensions. They are not nonlinear response-history analysis tools and are not full commercial seismic design workflows.
+
+- ## Example Output: Roof Displacement History
+
+The figure below shows the Roof Displacement History of a 5-storey frame undergoing a given ground motion
+
+![Roof Displacement History](benchmarks/5story/roofdisplacement.png)
 
 ### Verification and diagnostics
 
