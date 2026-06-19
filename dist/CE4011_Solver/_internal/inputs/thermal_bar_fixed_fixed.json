@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    {"id": 0, "x": 0.0, "y": 0.0, "restraints": {"ux": true, "uy": true, "rz": true}},
+    {"id": 1, "x": 3.0, "y": 0.0, "restraints": {"ux": true, "uy": true, "rz": true}}
+  ],
+  "materials": [
+    {"id": "steel", "E": 2.0e11, "alpha": 1.2e-5}
+  ],
+  "sections": [
+    {"id": "bar", "A": 0.005, "I": 1.0e-10, "d": 0.1}
+  ],
+  "elements": [
+    {
+      "id": 1,
+      "type": "frame",
+      "node_i": 0,
+      "node_j": 1,
+      "material": "steel",
+      "section": "bar",
+      "member_loads": [
+        {"type": "thermal", "T_uniform": 30.0, "delta_T": 0.0}
+      ]
+    }
+  ],
+  "nodal_loads": []
+}

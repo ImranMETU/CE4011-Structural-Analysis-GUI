@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<structure>
+  <nodes>
+    <node id="1" x="0.0" y="0.0">
+      <restraints ux="true" uy="true" rz="true" />
+    </node>
+    <node id="2" x="4.0" y="0.0">
+      <restraints ux="true" uy="true" rz="true" />
+    </node>
+  </nodes>
+
+  <materials>
+    <material id="steel" E="2.0e11" alpha="1.2e-5" />
+  </materials>
+
+  <sections>
+    <section id="pipe_truss" A="9.11061869541e-05" I="0.0" d="0.03" />
+  </sections>
+
+  <elements>
+    <element id="1" type="truss" node_i="1" node_j="2" material="steel" section="pipe_truss">
+      <member_loads>
+        <thermal T_uniform="30.0" />
+      </member_loads>
+    </element>
+  </elements>
+
+  <nodal_loads />
+</structure>

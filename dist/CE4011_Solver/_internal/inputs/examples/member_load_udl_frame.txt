@@ -1,0 +1,11 @@
+# CE4011 member-load example: single frame element with local-y UDL.
+# Negative local_y is downward for this horizontal member.
+
+MATERIAL steel E=200000000000 alpha=1.2e-5
+SECTION beam A=0.02 I=8e-5 d=0.4
+
+NODE 1 0 0 FIX FIX FREE
+NODE 2 5 0 FREE FIX FREE
+
+FRAME 1 1 2 steel beam
+MEMBER_LOAD 1 TYPE=UDL DIR=LOCAL_Y W=-10000
