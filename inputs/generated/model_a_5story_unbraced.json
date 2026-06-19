@@ -1,4 +1,14 @@
 {
+  "units": {
+    "name": "N-m-C-kg",
+    "force": "N",
+    "length": "m",
+    "mass": "kg",
+    "temperature": "C",
+    "time": "s",
+    "rotation": "rad"
+  },
+  "units_defaulted": false,
   "nodes": [
     {
       "id": 1,

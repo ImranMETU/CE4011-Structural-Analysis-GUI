@@ -25,6 +25,8 @@ def test_input_dialog_module_imports_successfully():
     assert callable(dialogs.open_sections_dialog)
     assert callable(dialogs.open_nodes_dialog)
     assert callable(dialogs.open_analysis_options_dialog)
+    assert callable(dialogs.open_diagram_conventions_dialog)
+    assert callable(dialogs.open_model_units_dialog)
     assert callable(dialogs.open_member_loads_dialog)
     assert callable(dialogs.open_thermal_loads_dialog)
     assert callable(dialogs.open_support_settlements_dialog)

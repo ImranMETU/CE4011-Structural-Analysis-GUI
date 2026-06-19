@@ -91,3 +91,19 @@ def test_static_app_exposes_form_refresh_helper():
     from gui.static_app import StaticAnalysisApp
 
     assert callable(getattr(StaticAnalysisApp, "_refresh_model_from_builder"))
+
+
+def test_toolbar_control_sync_preserves_analysis_option_default_mass():
+    from gui.static_app import StaticAnalysisApp
+
+    app = StaticAnalysisApp.__new__(StaticAnalysisApp)
+    app.model_builder = _form_builder()
+    app.model_builder.analysis_options["default_lateral_mass"] = 12345.0
+    app.num_modes = _DummyVar("3")
+    app.mode_scale = _DummyVar("2.0")
+
+    StaticAnalysisApp._apply_controls_to_analysis_options(app)
+
+    assert app.model_builder.analysis_options["default_lateral_mass"] == 12345.0
+    assert app.model_builder.analysis_options["num_modes"] == 3
+    assert app.model_builder.analysis_options["mode_shape_scale"] == 2.0

@@ -5,12 +5,14 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from units.unit_system import UnitSystem, default_unit_system, normalize_unit_system
+
 
 DEFAULT_ANALYSIS_OPTIONS = {
     "default_lateral_mass": 10000.0,
     "num_modes": 4,
     "static_deformation_scale": 1.0,
-    "force_diagram_scale": 1.0e-6,
+    "force_diagram_scale": 1.0,
     "mode_shape_scale": 1.0,
 }
 
@@ -22,6 +24,8 @@ class ModelBuilder:
         self.clear()
 
     def clear(self) -> None:
+        self.units = default_unit_system()
+        self.units_defaulted = False
         self.materials: dict[str, dict[str, Any]] = {}
         self.sections: dict[str, dict[str, Any]] = {}
         self.nodes: dict[int, dict[str, Any]] = {}
@@ -227,6 +231,10 @@ class ModelBuilder:
             else:
                 self.analysis_options[key] = float(value)
 
+    def set_units(self, units: UnitSystem | dict[str, Any]) -> None:
+        self.units = normalize_unit_system(units)
+        self.units_defaulted = False
+
     def delete_record(self, table: str, record_id: str | int) -> None:
         table_obj = self._table(table)
         key = int(record_id) if _integer_keyed_table(table) else str(record_id)
@@ -265,6 +273,8 @@ class ModelBuilder:
             }
 
         return {
+            "units": self.units.to_dict(),
+            "units_defaulted": self.units_defaulted,
             "nodes": nodes,
             "materials": self.table_records("materials"),
             "sections": self.table_records("sections"),
@@ -281,6 +291,8 @@ class ModelBuilder:
         mass_mapping: dict[int, dict[str, float]] | None = None,
     ) -> None:
         self.clear()
+        self.units = normalize_unit_system(data.get("units"))
+        self.units_defaulted = bool(data.get("units_defaulted", "units" not in data))
         for material in data.get("materials", []):
             self.add_material(material["id"], material["E"], material.get("alpha", 0.0))
         for section in data.get("sections", []):
@@ -359,6 +371,7 @@ class ModelBuilder:
 
     def summary_lines(self) -> list[str]:
         return [
+            f"Units: {self.units.name}",
             f"Materials: {len(self.materials)}",
             f"Sections: {len(self.sections)}",
             f"Nodes: {len(self.nodes)}",

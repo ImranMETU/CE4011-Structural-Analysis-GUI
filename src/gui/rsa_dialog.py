@@ -55,6 +55,11 @@ class ResponseSpectrumAnalysisDialog:
         self.damping_var = tk.StringVar(value="0.05")
         self.modes_var = tk.StringVar(value=str(min(4, _available_modes(modal_result))))
         self.direction_var = tk.StringVar(value="ux")
+        self.method_vars = {
+            "ABSSUM": tk.BooleanVar(value=True),
+            "SRSS": tk.BooleanVar(value=True),
+            "CQC": tk.BooleanVar(value=True),
+        }
         self.status_var = tk.StringVar(value="Select a THF file and run RSA.")
 
         self._build_widgets()
@@ -91,13 +96,18 @@ class ResponseSpectrumAnalysisDialog:
             padx=6,
             pady=3,
         )
+        ttk.Label(frame, text="Combination methods:").grid(row=5, column=0, sticky="nw", pady=3)
+        method_frame = ttk.Frame(frame)
+        method_frame.grid(row=5, column=1, sticky="w", padx=6, pady=3)
+        for method, variable in self.method_vars.items():
+            ttk.Checkbutton(method_frame, text=method, variable=variable).pack(side=tk.LEFT, padx=(0, 8))
 
         status = ttk.LabelFrame(frame, text="Status / Warnings", padding=8)
-        status.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(10, 8))
+        status.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(10, 8))
         ttk.Label(status, textvariable=self.status_var, justify=tk.LEFT, wraplength=560).pack(anchor=tk.W)
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=6, column=0, columnspan=3, sticky="ew")
+        buttons.grid(row=7, column=0, columnspan=3, sticky="ew")
         ttk.Button(buttons, text="Run RSA", command=self.run_rsa).pack(side=tk.LEFT)
         ttk.Button(buttons, text="Close", command=self.window.destroy).pack(side=tk.RIGHT)
 
@@ -127,12 +137,18 @@ class ResponseSpectrumAnalysisDialog:
                 damping_ratio=damping,
             )
             spectrum["record_path"] = str(path)
+            spectrum["source"] = str(path)
+            spectrum["acceleration_unit"] = "m/s^2"
+            methods = tuple(method for method, variable in self.method_vars.items() if variable.get())
+            if not methods:
+                raise ValueError("Select at least one modal combination method.")
             result = run_modal_rsa(
                 self.modal_result,
                 spectrum,
                 static_or_model_data=self.model_data,
                 num_modes=modes,
                 direction=self.direction_var.get(),
+                combination_methods=methods,
             )
         except Exception as exc:
             messagebox.showerror("RSA failed", str(exc), parent=self.window)

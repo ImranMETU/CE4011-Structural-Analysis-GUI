@@ -10,6 +10,7 @@ from postprocessing.modal_results import (
     apply_mode_shape_sign_convention,
     mode_shape_component_labels,
 )
+from units.unit_system import unit_label
 
 
 def plot_mode_shape(
@@ -56,8 +57,8 @@ def plot_mode_shape(
     if str(sign_convention).strip().lower() not in {"", "raw"}:
         convention_text = f", sign={sign_convention}"
     ax.set_title(f"Mode {mode_no} Shape ({frequency:.4g} Hz, scale={scale:g}{convention_text})")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
+    ax.set_xlabel(f"X [{unit_label('length', result.get('units'))}]")
+    ax.set_ylabel(f"Y [{unit_label('length', result.get('units'))}]")
     _set_equal_axes(ax)
     return fig, ax
 
@@ -72,7 +73,7 @@ def plot_modal_periods(result: dict[str, Any], ax=None):
     ax.bar(modes, periods, color="tab:blue")
     ax.set_title("Modal Periods")
     ax.set_xlabel("Mode")
-    ax.set_ylabel("Period")
+    ax.set_ylabel(f"Period [{unit_label('period', result.get('units'))}]")
     ax.set_xticks(modes)
     return fig, ax
 
@@ -87,7 +88,7 @@ def plot_modal_frequencies(result: dict[str, Any], ax=None):
     ax.bar(modes, frequencies, color="tab:green")
     ax.set_title("Modal Frequencies")
     ax.set_xlabel("Mode")
-    ax.set_ylabel("Frequency (Hz)")
+    ax.set_ylabel(f"Frequency [{unit_label('frequency', result.get('units'))}]")
     ax.set_xticks(modes)
     return fig, ax
 
@@ -102,7 +103,7 @@ def plot_modal_angular_frequencies(result: dict[str, Any], ax=None):
     ax.bar(modes, omega, color="tab:purple")
     ax.set_title("Modal Angular Frequencies")
     ax.set_xlabel("Mode")
-    ax.set_ylabel("Angular frequency (rad/s)")
+    ax.set_ylabel(f"Angular frequency [{unit_label('angular_frequency', result.get('units'))}]")
     ax.set_xticks(modes)
     return fig, ax
 

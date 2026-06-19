@@ -1,0 +1,203 @@
+{
+  "units": {
+    "name": "kN-m-C-tonne",
+    "force": "kN",
+    "length": "m",
+    "mass": "tonne",
+    "temperature": "C",
+    "time": "s",
+    "rotation": "rad"
+  },
+  "units_defaulted": false,
+  "description": "CE586 Examples 6.4/6.6 equivalent 3-story shear-frame geometry for RHA/RSA checks. Story stiffnesses are 3k, 2k, k with k=1200 kN/m. Floor masses are 50, 37.5, and 25 tonne. Column EI values are chosen so two fixed-fixed columns per story approximately reproduce the target story stiffnesses.",
+  "nodes": [
+    {
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0,
+      "restraints": {
+        "ux": true,
+        "uy": true,
+        "rz": true
+      }
+    },
+    {
+      "id": 2,
+      "x": 6.0,
+      "y": 0.0,
+      "restraints": {
+        "ux": true,
+        "uy": true,
+        "rz": true
+      }
+    },
+    {
+      "id": 3,
+      "x": 0.0,
+      "y": 3.0,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    },
+    {
+      "id": 4,
+      "x": 6.0,
+      "y": 3.0,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    },
+    {
+      "id": 5,
+      "x": 0.0,
+      "y": 6.0,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    },
+    {
+      "id": 6,
+      "x": 6.0,
+      "y": 6.0,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    },
+    {
+      "id": 7,
+      "x": 0.0,
+      "y": 9.0,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    },
+    {
+      "id": 8,
+      "x": 6.0,
+      "y": 9.0,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "E30GPa_kN_m",
+      "E": 30000000.0,
+      "alpha": 0.0
+    }
+  ],
+  "sections": [
+    {
+      "id": "column_story_1_3k",
+      "A": 1.0,
+      "I": 0.000135,
+      "d": 1.0
+    },
+    {
+      "id": "column_story_2_2k",
+      "A": 1.0,
+      "I": 9e-05,
+      "d": 1.0
+    },
+    {
+      "id": "column_story_3_1k",
+      "A": 1.0,
+      "I": 4.5e-05,
+      "d": 1.0
+    },
+    {
+      "id": "rigid_floor_beam",
+      "A": 10.0,
+      "I": 1.0,
+      "d": 1.0
+    }
+  ],
+  "elements": [
+    {
+      "id": 1,
+      "type": "frame",
+      "node_i": 1,
+      "node_j": 3,
+      "material": "E30GPa_kN_m",
+      "section": "column_story_1_3k"
+    },
+    {
+      "id": 2,
+      "type": "frame",
+      "node_i": 2,
+      "node_j": 4,
+      "material": "E30GPa_kN_m",
+      "section": "column_story_1_3k"
+    },
+    {
+      "id": 3,
+      "type": "frame",
+      "node_i": 3,
+      "node_j": 5,
+      "material": "E30GPa_kN_m",
+      "section": "column_story_2_2k"
+    },
+    {
+      "id": 4,
+      "type": "frame",
+      "node_i": 4,
+      "node_j": 6,
+      "material": "E30GPa_kN_m",
+      "section": "column_story_2_2k"
+    },
+    {
+      "id": 5,
+      "type": "frame",
+      "node_i": 5,
+      "node_j": 7,
+      "material": "E30GPa_kN_m",
+      "section": "column_story_3_1k"
+    },
+    {
+      "id": 6,
+      "type": "frame",
+      "node_i": 6,
+      "node_j": 8,
+      "material": "E30GPa_kN_m",
+      "section": "column_story_3_1k"
+    },
+    {
+      "id": 7,
+      "type": "frame",
+      "node_i": 3,
+      "node_j": 4,
+      "material": "E30GPa_kN_m",
+      "section": "rigid_floor_beam"
+    },
+    {
+      "id": 8,
+      "type": "frame",
+      "node_i": 5,
+      "node_j": 6,
+      "material": "E30GPa_kN_m",
+      "section": "rigid_floor_beam"
+    },
+    {
+      "id": 9,
+      "type": "frame",
+      "node_i": 7,
+      "node_j": 8,
+      "material": "E30GPa_kN_m",
+      "section": "rigid_floor_beam"
+    }
+  ],
+  "nodal_loads": []
+}

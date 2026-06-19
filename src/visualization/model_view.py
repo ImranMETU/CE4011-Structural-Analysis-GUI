@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import matplotlib.pyplot as plt
+from units.unit_system import unit_label
 from matplotlib.lines import Line2D
 from matplotlib.patches import Circle, Patch, Polygon, Rectangle
 
@@ -43,8 +44,8 @@ def plot_model_view(result_or_model: dict[str, Any], ax=None, options: dict[str,
     nodes, elements = _normalize_nodes_elements(result_or_model)
     if not nodes:
         ax.set_title("Model View")
-        ax.set_xlabel("X")
-        ax.set_ylabel("Y")
+        ax.set_xlabel(f"X [{unit_label('length', result_or_model.get('units'))}]")
+        ax.set_ylabel(f"Y [{unit_label('length', result_or_model.get('units'))}]")
         _apply_axes_options(ax, opts)
         return fig, ax
 
@@ -69,8 +70,8 @@ def plot_model_view(result_or_model: dict[str, Any], ax=None, options: dict[str,
         _draw_legend(ax)
 
     ax.set_title("Model View")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
+    ax.set_xlabel(f"X [{unit_label('length', result_or_model.get('units'))}]")
+    ax.set_ylabel(f"Y [{unit_label('length', result_or_model.get('units'))}]")
     _apply_axes_options(ax, opts)
     ax.set_aspect("equal", adjustable="datalim")
     ax.autoscale()

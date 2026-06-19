@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 
 from postprocessing.drift_results import group_nodes_by_floor, get_roof_nodes
+from postprocessing.modal_response_parameters import modal_response_parameters_from_result
+from postprocessing.modal_rsa_results import compute_modal_rsa_responses, compute_rsa_combinations
 
 
 def run_modal_rsa(
@@ -15,6 +17,7 @@ def run_modal_rsa(
     static_or_model_data: dict[str, Any] | None = None,
     num_modes: int | None = None,
     direction: str = "ux",
+    combination_methods: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, Any]:
     """Compute per-mode peak response estimates from a response spectrum.
 
@@ -98,7 +101,7 @@ def run_modal_rsa(
     )
     combined["warnings"].extend(warnings)
 
-    return {
+    result = {
         "modes_used": n_modes,
         "direction": direction,
         "modal_peak_rows": modal_peak_rows,
@@ -113,6 +116,28 @@ def run_modal_rsa(
         },
         "warnings": warnings,
     }
+    try:
+        parameters = modal_response_parameters_from_result(modal_result, normalization="display")
+        if n_modes < len(parameters["rows"]):
+            parameters = dict(parameters)
+            parameters["rows"] = parameters["rows"][:n_modes]
+            parameters["modes"] = parameters["modes"][:, :n_modes]
+            parameters["omegas"] = parameters["omegas"][:n_modes]
+        factor_responses = compute_modal_rsa_responses(parameters, spectrum_result)
+        factor_combinations = compute_rsa_combinations(
+            factor_responses,
+            omegas=omegas[:n_modes],
+            damping_ratios=factor_responses["modal_damping_ratios"],
+            methods=combination_methods,
+        )
+        result["response_factor_results"] = factor_responses
+        result["response_factor_combinations"] = factor_combinations
+        result["warnings"].extend(factor_responses["warnings"])
+        result["spectrum_metadata"]["source"] = factor_responses["spectrum_source"]
+        result["spectrum_metadata"]["Sa_unit"] = factor_responses["spectrum_unit"]
+    except (KeyError, ValueError) as exc:
+        result["warnings"].append(f"CE586 response-factor RSA unavailable: {exc}")
+    return result
 
 
 def _combined_rsa_results(

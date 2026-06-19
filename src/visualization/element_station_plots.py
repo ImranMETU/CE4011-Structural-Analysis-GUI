@@ -6,6 +6,12 @@ import math
 from typing import Any
 
 import matplotlib.pyplot as plt
+from units.unit_system import unit_label
+from visualization.diagram_conventions import (
+    ForceDiagramConvention,
+    default_force_diagram_convention,
+    get_display_sign,
+)
 
 from postprocessing.element_station_results import (
     all_frame_station_results,
@@ -29,8 +35,8 @@ def plot_hermite_deformed_shape(
         color = "tab:orange" if str(element.get("type", "")).lower() == "frame" else "tab:green"
         ax.plot(polyline["x_deformed"], polyline["y_deformed"], color=color, linewidth=1.8)
     ax.set_title(f"Hermite Deformed Shape (scale={scale:g})")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
+    ax.set_xlabel(f"X [{unit_label('length', result.get('units'))}]")
+    ax.set_ylabel(f"Y [{unit_label('length', result.get('units'))}]")
     _set_equal_axes(ax)
     return fig, ax
 
@@ -41,12 +47,15 @@ def plot_section_force_stations(
     scale: float = 1.0,
     ax=None,
     n_stations: int = 11,
+    convention: ForceDiagramConvention | None = None,
 ):
     """Plot station force values as offsets from each frame element chord."""
     fig, ax = _get_fig_ax(ax)
     quantity = quantity.upper()
     if quantity not in {"N", "V", "M"}:
         raise ValueError("quantity must be N, V, or M.")
+    active = convention or default_force_diagram_convention()
+    display_sign = get_display_sign(quantity, active)
 
     rows = all_frame_station_results(result, n_stations=n_stations)
     by_element: dict[int, list[dict[str, Any]]] = {}
@@ -65,13 +74,13 @@ def plot_section_force_stations(
         py = []
         for row in by_element[int(element_id)]:
             value = float(row[quantity])
-            px.append(float(row["global_x"]) + scale * value * nx)
-            py.append(float(row["global_y"]) + scale * value * ny)
+            px.append(float(row["global_x"]) + scale * display_sign * value * nx)
+            py.append(float(row["global_y"]) + scale * display_sign * value * ny)
         ax.plot(px, py, marker="o", markersize=3, linewidth=1.4, color="tab:blue")
 
-    ax.set_title(f"Section Force Stations ({quantity}, scale={scale:g})")
-    ax.set_xlabel("X")
-    ax.set_ylabel("Y")
+    ax.set_title(f"Section Force Stations ({quantity}, {active.convention_name} display, scale={scale:g})")
+    ax.set_xlabel(f"X [{unit_label('length', result.get('units'))}]")
+    ax.set_ylabel(f"Y [{unit_label('length', result.get('units'))}]")
     _set_equal_axes(ax)
     return fig, ax
 
@@ -92,8 +101,8 @@ def plot_deformed_slope_profile(result: dict[str, Any], ax=None, n_stations: int
             label=f"E{element_id}",
         )
     ax.set_title("Deformed Slope Profile")
-    ax.set_xlabel("Local x")
-    ax.set_ylabel("dv/dx (rad)")
+    ax.set_xlabel(f"Local x [{unit_label('length', result.get('units'))}]")
+    ax.set_ylabel(f"dv/dx [{unit_label('rotation', result.get('units'))}]")
     ax.grid(True, color="0.9")
     if by_element:
         ax.legend(fontsize=8)

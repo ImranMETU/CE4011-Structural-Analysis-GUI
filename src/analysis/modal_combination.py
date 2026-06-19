@@ -55,9 +55,9 @@ def cqc_correlation_coefficient(omega_i: float, omega_j: float, damping_ratio: f
     if omega_i == omega_j:
         return 1.0
     xi = float(damping_ratio)
-    r = omega_j / omega_i
-    numerator = 8.0 * xi * xi * (1.0 + r) * (r ** 1.5)
-    denominator = ((1.0 - r * r) ** 2) + 4.0 * xi * xi * r * ((1.0 + r) ** 2)
+    beta = min(omega_i, omega_j) / max(omega_i, omega_j)
+    numerator = 8.0 * xi * xi * (1.0 + beta) * (beta ** 1.5)
+    denominator = ((1.0 - beta * beta) ** 2) + 4.0 * xi * xi * beta * ((1.0 + beta) ** 2)
     if abs(denominator) <= 1.0e-14:
         return 1.0
     return float(numerator / denominator)

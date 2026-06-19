@@ -115,9 +115,9 @@ def _write_plots(case_id: str, result: dict[str, Any]) -> None:
     plot_specs = [
         ("geometry.png", plot_geometry, {}),
         ("deformed_shape.png", plot_deformed_shape, {"scale": 1.0}),
-        ("axial_force.png", plot_axial_force_diagram, {"scale": 1.0e-6}),
-        ("shear_force.png", plot_shear_force_diagram, {"scale": 1.0e-6}),
-        ("bending_moment.png", plot_bending_moment_diagram, {"scale": 1.0e-6}),
+        ("axial_force.png", plot_axial_force_diagram, {"scale": 1.0}),
+        ("shear_force.png", plot_shear_force_diagram, {"scale": 1.0}),
+        ("bending_moment.png", plot_bending_moment_diagram, {"scale": 1.0}),
     ]
     for filename, plot_func, kwargs in plot_specs:
         fig, _ax = plot_func(result, **kwargs)

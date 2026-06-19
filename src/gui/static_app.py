@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import sys
 import traceback
+import zipfile
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
@@ -33,9 +36,11 @@ from gui.eigen_calculator_dialog import open_eigen_calculator_dialog  # noqa: E4
 from gui.input_dialogs import (  # noqa: E402
     open_analysis_options_dialog,
     open_axis_offsets_dialog,
+    open_diagram_conventions_dialog,
     open_frame_elements_dialog,
     open_materials_dialog,
     open_member_loads_dialog,
+    open_model_units_dialog,
     open_modal_mass_source_dialog,
     open_modal_masses_dialog,
     open_nodal_loads_dialog,
@@ -54,6 +59,7 @@ from gui.interactive_selection import (  # noqa: E402
     select_nodes_in_rectangle,
 )
 from gui.model_builder import ModelBuilder  # noqa: E402
+from gui.modal_response_options_dialog import open_modal_response_options_dialog  # noqa: E402
 from gui.rha_dialog import open_rha_dialog  # noqa: E402
 from gui.rha_node_dialog import open_rha_node_dialog  # noqa: E402
 from gui.rsa_dialog import open_rsa_dialog  # noqa: E402
@@ -68,14 +74,25 @@ from gui.result_tables import (  # noqa: E402
     format_modal_mass_summary_rows,
     format_modal_participation_rows,
     format_modal_properties_rows,
+    format_modal_response_parameter_rows,
+    format_modal_response_factors_rows,
     format_nodal_displacement_rows,
     format_reaction_rows,
     format_rha_peak_floor_response_rows,
     format_rha_peak_story_drift_rows,
     format_rha_node_peak_response_rows,
+    format_rha_modal_acceleration_rows,
+    format_rha_modal_base_response_rows,
+    format_rha_modal_displacement_rows,
+    format_rha_modal_force_rows,
+    format_rha_modal_peak_response_rows,
     format_rsa_combined_response_rows,
+    format_rsa_cqc_correlation_rows,
+    format_rsa_modal_base_response_factor_rows,
     format_rsa_modal_peak_response_rows,
     format_rsa_modal_peak_story_drift_rows,
+    format_rsa_modal_response_factor_rows,
+    format_rsa_spectrum_at_modal_period_rows,
     format_rha_summary_table_rows,
     format_solver_diagnostics_table_rows,
     format_static_roof_displacement_rows,
@@ -85,6 +102,8 @@ from gui.result_tables import (  # noqa: E402
 )
 from model.structure import Structure  # noqa: E402
 from postprocessing.modal_results import apply_mode_shape_sign_convention, package_modal_results  # noqa: E402
+from postprocessing.modal_response_parameters import modal_response_parameters_from_result  # noqa: E402
+from postprocessing.rha_modal_response import compute_modal_pseudo_acceleration_history  # noqa: E402
 from postprocessing.solver_diagnostics import compute_solver_diagnostics  # noqa: E402
 from postprocessing.static_results import run_static_analysis  # noqa: E402
 from postprocessing.drift_results import (  # noqa: E402
@@ -96,6 +115,10 @@ from visualization.drift_plots import (  # noqa: E402
     plot_drift_ratio_profile,
     plot_floor_displacement_profile,
     plot_story_drift_profile,
+)
+from visualization.diagram_conventions import (  # noqa: E402
+    ForceDiagramConvention,
+    default_force_diagram_convention,
 )
 from visualization.element_station_plots import (  # noqa: E402
     plot_deformed_slope_profile,
@@ -118,6 +141,7 @@ from visualization.rha_plots import (  # noqa: E402
     plot_story_drift_histories,
 )
 from visualization.rha_node_plots import plot_node_response_history  # noqa: E402
+from visualization.modal_force_state_plots import plot_modal_force_state  # noqa: E402
 from visualization.rsa_plots import (  # noqa: E402
     plot_rsa_combined_roof_response,
     plot_rsa_combined_story_drift_envelope,
@@ -132,6 +156,7 @@ from visualization.static_plots import (  # noqa: E402
     plot_shear_force_diagram,
 )
 from text_loader import load_text_model, parse_text_model  # noqa: E402
+from units.unit_system import default_unit_system, normalize_unit_system  # noqa: E402
 from xml_loader import load_structure_from_xml  # noqa: E402
 
 
@@ -156,10 +181,12 @@ PLOT_TYPES = (
     "Modal Frequencies",
     "Modal Angular Frequencies",
     "Modal Periods",
+    "Modal Force State",
     "RSA Modal Peak Roof Response",
     "RSA Modal Peak Story Drift",
     "RSA Combined Roof Response",
     "RSA Combined Story Drift Envelope",
+    "RSA Modal Force State",
     "RHA Ground Motion",
     "RHA Roof Displacement History",
     "RHA Floor Displacement Histories",
@@ -173,10 +200,12 @@ PLOT_SCALES = {
     "Geometry": 1.0,
     "Deformed Shape": 1.0,
     "Hermite Deformed Shape": 1.0,
-    "Axial Force Diagram": 1.0e-6,
-    "Shear Force Diagram": 1.0e-6,
-    "Bending Moment Diagram": 1.0e-6,
+    "Axial Force Diagram": 1.0,
+    "Shear Force Diagram": 1.0,
+    "Bending Moment Diagram": 1.0,
 }
+
+DEFAULT_MODAL_SIGN_CONVENTION = "roof ux positive"
 
 STATIC_PLOT_TYPES = {
     "Geometry",
@@ -208,6 +237,7 @@ MODAL_PLOT_TYPES = {
     "Modal Frequencies",
     "Modal Angular Frequencies",
     "Modal Periods",
+    "Modal Force State",
 }
 
 RHA_PLOT_TYPES = {
@@ -225,6 +255,7 @@ RSA_PLOT_TYPES = {
     "RSA Modal Peak Story Drift",
     "RSA Combined Roof Response",
     "RSA Combined Story Drift Envelope",
+    "RSA Modal Force State",
 }
 
 DEFAULT_TEXT_MODEL = """# CE4011 text model input deck
@@ -255,6 +286,8 @@ MASS 2 UX=10000 UY=0 RZ=0
 INPUT_FORMAT_HELP = """Supported text input syntax:
 
 # comment
+UNITS N-m-C-kg
+# or: UNITS FORCE=N LENGTH=m MASS=kg TEMP=C TIME=s ROTATION=rad
 MATERIAL name E=30000000 alpha=8e-6
 SECTION name A=0.32 I=0.01707 d=0.8
 NODE id x y ux uy rz
@@ -273,6 +306,7 @@ Node restraints must be FIX or FREE.
 Thermal loads are assigned as element member loads.
 Settlements are prescribed nodal displacements and should be on restrained DOFs.
 MASS lines are optional and are used for modal analysis.
+UNITS changes labels/metadata only; numerical values are not converted.
 """
 
 
@@ -285,13 +319,16 @@ class StaticAnalysisApp:
         self.root.minsize(900, 600)
 
         self.loaded_path: Path | None = None
+        self.current_file_path: Path | None = None
         self.model_data: dict[str, Any] | None = None
         self.text_mass_mapping: dict[int, dict[str, float]] | None = None
+        self.modal_mass_source_label = "none"
         self.text_editor: tk.Toplevel | None = None
         self.text_editor_widget: tk.Text | None = None
         self.text_model_path: Path | None = None
         self.input_source: str | None = None
         self.generated_model_name: str | None = None
+        self.is_dirty = False
         self.model_builder = ModelBuilder()
         self.static_result: dict[str, Any] | None = None
         self.modal_result: dict[str, Any] | None = None
@@ -308,12 +345,15 @@ class StaticAnalysisApp:
         self._selection_artists: list[Any] = []
 
         self.plot_type = tk.StringVar(value=PLOT_TYPES[0])
-        self.default_mass = tk.StringVar(value="10000.0")
         self.num_modes = tk.StringVar(value="4")
         self.mode_scale = tk.StringVar(value="1.0")
-        self.modal_sign_convention = tk.StringVar(value="roof ux positive")
+        self.rha_force_mode = tk.StringVar(value="1")
+        self.rha_force_time_index = tk.StringVar(value="")
+        self.modal_force_a_value = tk.StringVar(value="1.0")
+        self.modal_force_use_rha = tk.BooleanVar(value=False)
         self.show_modal_values = tk.BooleanVar(value=False)
         self.coordinate_status = tk.StringVar(value="outside axes")
+        self.force_diagram_convention = default_force_diagram_convention()
 
         self.figure = Figure(figsize=(7.0, 5.0), dpi=100)
         self.ax = self.figure.add_subplot(111)
@@ -333,15 +373,16 @@ class StaticAnalysisApp:
 
         file_menu = tk.Menu(menu_bar, tearoff=False)
         file_menu.add_command(label="New Model", command=self.new_model)
-        file_menu.add_command(label="New Assignment 4 Settlement Example", command=self.new_assignment4_settlement_example)
-        file_menu.add_command(label="New Assignment 4 Thermal Example", command=self.new_assignment4_thermal_example)
         file_menu.add_separator()
-        file_menu.add_command(label="Open XML Model", command=self.open_xml_model)
-        file_menu.add_command(label="Open JSON Model", command=self.open_json_model)
-        file_menu.add_command(label="Open Text Model", command=self.open_text_model)
-        file_menu.add_command(label="Open Generated Model", command=self.open_generated_model)
-        file_menu.add_command(label="Save Text Model", command=self.save_text_model)
+        file_menu.add_command(label="Open Model...", command=self.open_model)
+        file_menu.add_command(label="Open Generated Model...", command=self.open_generated_model)
+        file_menu.add_separator()
+        file_menu.add_command(label="Save", command=self.save_model)
+        file_menu.add_command(label="Save As...", command=self.save_model_as)
+        file_menu.add_command(label="Save Model Package...", command=self.save_model_package)
+        file_menu.add_separator()
         file_menu.add_command(label="Generate Proposal Models", command=self.generate_proposal_models)
+        file_menu.add_command(label="Diagram Display Conventions", command=self.open_diagram_display_conventions)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.destroy)
         menu_bar.add_cascade(label="File", menu=file_menu)
@@ -360,6 +401,7 @@ class StaticAnalysisApp:
         define_menu.add_command(label="Support Settlements", command=self.define_support_settlements)
         define_menu.add_command(label="Modal Masses", command=self.define_modal_masses)
         define_menu.add_command(label="Modal Mass Source", command=self.define_modal_mass_source)
+        define_menu.add_command(label="Model Units", command=self.define_model_units)
         define_menu.add_command(label="Springs / Direct Stiffness", command=self.define_springs_direct_stiffness)
         define_menu.add_command(label="Analysis Options", command=self.define_analysis_options)
         define_menu.add_separator()
@@ -402,6 +444,7 @@ class StaticAnalysisApp:
             ("Frequencies, Hz", "Modal Frequencies"),
             ("Angular Frequencies, rad/s", "Modal Angular Frequencies"),
             ("Periods, s", "Modal Periods"),
+            ("Modal Force State", "Modal Force State"),
         ):
             modal_menu.add_command(label=label, command=lambda plot=name: self.select_plot_type(plot))
         rha_menu = tk.Menu(display_menu, tearoff=False)
@@ -421,12 +464,18 @@ class StaticAnalysisApp:
             ("Modal Peak Story Drift", "RSA Modal Peak Story Drift"),
             ("Combined Roof Response", "RSA Combined Roof Response"),
             ("Combined Story Drift Envelope", "RSA Combined Story Drift Envelope"),
+            ("Modal Force State", "RSA Modal Force State"),
         ):
             rsa_menu.add_command(label=label, command=lambda plot=name: self.select_plot_type(plot))
         display_menu.add_cascade(label="Static", menu=static_menu)
         display_menu.add_cascade(label="Modal", menu=modal_menu)
         display_menu.add_cascade(label="RSA", menu=rsa_menu)
         display_menu.add_cascade(label="RHA", menu=rha_menu)
+        display_menu.add_separator()
+        display_menu.add_command(
+            label="Modal Response / Force-State Options",
+            command=self.open_modal_response_options,
+        )
         menu_bar.add_cascade(label="Display", menu=display_menu)
 
         tables_menu = tk.Menu(menu_bar, tearoff=False)
@@ -441,22 +490,38 @@ class StaticAnalysisApp:
         tables_menu.add_command(label="Story Drift Table", command=self.show_story_drift_table)
         tables_menu.add_command(label="Roof Displacement", command=self.show_roof_displacement_table)
         tables_menu.add_separator()
-        tables_menu.add_command(label="Modal Frequencies", command=self.show_modal_frequencies_table)
-        tables_menu.add_command(label="Modal Participation Factors", command=self.show_modal_participation_table)
-        tables_menu.add_command(label="Modal Properties", command=self.show_modal_properties_table)
-        tables_menu.add_command(label="Modal DOF Classification", command=self.show_modal_dof_classification_table)
-        tables_menu.add_command(label="Condensed Modal Matrices", command=self.show_condensed_modal_matrices_table)
-        tables_menu.add_command(label="Full Mode Shapes", command=self.show_full_mode_shapes_table)
-        tables_menu.add_command(label="Modal Mass Summary", command=self.show_modal_mass_summary_table)
+        modal_tables_menu = tk.Menu(tables_menu, tearoff=False)
+        modal_tables_menu.add_command(label="Modal Frequencies", command=self.show_modal_frequencies_table)
+        modal_tables_menu.add_command(label="Modal Properties", command=self.show_modal_properties_table)
+        modal_tables_menu.add_command(label="Modal Participation Factors", command=self.show_modal_participation_table)
+        modal_tables_menu.add_command(label="Modal Response Factors", command=self.show_modal_response_factors_table)
+        modal_tables_menu.add_separator()
+        modal_tables_menu.add_command(label="Full Mode Shapes", command=self.show_full_mode_shapes_table)
+        modal_tables_menu.add_command(label="Condensed Modal Matrices", command=self.show_condensed_modal_matrices_table)
+        modal_tables_menu.add_command(label="Modal DOF Classification", command=self.show_modal_dof_classification_table)
+        modal_tables_menu.add_command(label="Modal Mass Summary", command=self.show_modal_mass_summary_table)
+        tables_menu.add_cascade(label="Modal", menu=modal_tables_menu)
         tables_menu.add_separator()
         tables_menu.add_command(label="RHA Summary", command=self.show_rha_summary_table)
         tables_menu.add_command(label="RHA Peak Floor Responses", command=self.show_rha_peak_floor_responses_table)
         tables_menu.add_command(label="RHA Peak Story Drifts", command=self.show_rha_peak_story_drifts_table)
         tables_menu.add_command(label="RHA Node Peak Responses", command=self.show_rha_node_peak_responses_table)
+        tables_menu.add_command(label="RHA Modal A(t)", command=self.show_rha_modal_acceleration_table)
+        tables_menu.add_command(label="RHA Modal Displacement Contributions", command=self.show_rha_modal_displacement_table)
+        tables_menu.add_command(label="RHA Modal Force Contributions", command=self.show_rha_modal_force_table)
+        tables_menu.add_command(label="RHA Modal Base Response", command=self.show_rha_modal_base_response_table)
+        tables_menu.add_command(label="RHA Modal Peak Responses", command=self.show_rha_modal_peak_responses_table)
         tables_menu.add_separator()
-        tables_menu.add_command(label="RSA Modal Peak Responses", command=self.show_rsa_modal_peak_responses_table)
-        tables_menu.add_command(label="RSA Modal Peak Story Drifts", command=self.show_rsa_modal_peak_story_drifts_table)
-        tables_menu.add_command(label="RSA Combined Responses", command=self.show_rsa_combined_responses_table)
+        rsa_tables_menu = tk.Menu(tables_menu, tearoff=False)
+        rsa_tables_menu.add_command(label="Spectrum at Modal Periods", command=self.show_rsa_spectrum_at_modal_periods_table)
+        rsa_tables_menu.add_command(label="Modal Responses", command=self.show_rsa_modal_responses_table)
+        rsa_tables_menu.add_command(label="Modal Base Responses", command=self.show_rsa_modal_base_responses_table)
+        rsa_tables_menu.add_command(label="Combined Responses", command=self.show_rsa_combined_responses_table)
+        rsa_tables_menu.add_command(label="CQC Correlation Matrix", command=self.show_rsa_cqc_correlation_table)
+        rsa_tables_menu.add_separator()
+        rsa_tables_menu.add_command(label="Legacy Modal Peak Responses", command=self.show_rsa_modal_peak_responses_table)
+        rsa_tables_menu.add_command(label="Legacy Modal Peak Story Drifts", command=self.show_rsa_modal_peak_story_drifts_table)
+        tables_menu.add_cascade(label="RSA", menu=rsa_tables_menu)
         tables_menu.add_separator()
         tables_menu.add_command(label="Export Current Table to CSV", command=self.export_current_table)
         menu_bar.add_cascade(label="Tables", menu=tables_menu)
@@ -481,7 +546,7 @@ class StaticAnalysisApp:
         top = tk.Frame(self.root, padx=8, pady=8)
         top.pack(side=tk.TOP, fill=tk.X)
 
-        load_button = tk.Button(top, text="Load XML/JSON Model", command=self.load_file)
+        load_button = tk.Button(top, text="Open Model...", command=self.open_model)
         load_button.pack(side=tk.LEFT, padx=(0, 6))
 
         run_button = tk.Button(top, text="Run Static Analysis", command=self.run_analysis)
@@ -489,9 +554,6 @@ class StaticAnalysisApp:
 
         modal_button = tk.Button(top, text="Run Modal Analysis", command=self.run_modal_analysis)
         modal_button.pack(side=tk.LEFT, padx=(0, 12))
-
-        tk.Label(top, text="Mass/free ux:").pack(side=tk.LEFT)
-        tk.Entry(top, textvariable=self.default_mass, width=10).pack(side=tk.LEFT, padx=(4, 8))
 
         tk.Label(top, text="Modes:").pack(side=tk.LEFT)
         tk.Spinbox(top, from_=1, to=4, textvariable=self.num_modes, width=4).pack(side=tk.LEFT, padx=(4, 8))
@@ -505,16 +567,6 @@ class StaticAnalysisApp:
             variable=self.show_modal_values,
             command=self._redraw_current_plot,
         ).pack(side=tk.LEFT, padx=(0, 8))
-
-        tk.Label(top, text="Mode sign:").pack(side=tk.LEFT)
-        tk.OptionMenu(
-            top,
-            self.modal_sign_convention,
-            "roof ux positive",
-            "largest component positive",
-            "raw",
-            command=lambda _value: self._redraw_current_plot(),
-        ).pack(side=tk.LEFT, padx=(4, 12))
 
         tk.Label(top, text="Result View:").pack(side=tk.LEFT)
         self.plot_menu = tk.OptionMenu(top, self.plot_type, *PLOT_TYPES, command=self.on_plot_type_changed)
@@ -549,30 +601,56 @@ class StaticAnalysisApp:
         self.selection_text.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.selection_text.configure(state=tk.DISABLED)
 
-    def load_file(self) -> None:
+    def open_modal_response_options(self) -> None:
+        """Open optional force-state controls outside the default toolbar."""
+        open_modal_response_options_dialog(
+            self.root,
+            self.rha_force_mode,
+            self.modal_force_a_value,
+            self.modal_force_use_rha,
+            self.rha_force_time_index,
+            self._apply_modal_response_options,
+        )
+
+    def _apply_modal_response_options(self) -> None:
+        """Refresh a force-state plot after dialog settings are applied."""
+        if self.plot_type.get() not in {"Modal Force State", "RSA Modal Force State"}:
+            return
+        try:
+            self._redraw_current_plot()
+            self._update_summary()
+        except Exception as exc:
+            self._show_error("Plot update failed", exc)
+
+    def open_model(self) -> None:
         file_path = filedialog.askopenfilename(
             title="Open structural model",
             filetypes=[
-                ("Structural model", "*.xml *.json"),
-                ("XML files", "*.xml"),
-                ("JSON files", "*.json"),
+                ("All supported models", "*.json *.xml *.txt"),
+                ("JSON model", "*.json"),
+                ("XML model", "*.xml"),
+                ("Text model", "*.txt"),
                 ("All files", "*.*"),
             ],
         )
         if not file_path:
             return
 
-        self._load_model_from_path(Path(file_path), source="file")
+        self._load_model_file(Path(file_path))
+
+    def load_file(self) -> None:
+        """Backward-compatible alias for the unified Open Model command."""
+        self.open_model()
 
     def open_xml_model(self) -> None:
         file_path = filedialog.askopenfilename(title="Open XML model", filetypes=[("XML files", "*.xml")])
         if file_path:
-            self._load_model_from_path(Path(file_path), source="xml")
+            self._load_model_file(Path(file_path))
 
     def open_json_model(self) -> None:
         file_path = filedialog.askopenfilename(title="Open JSON model", filetypes=[("JSON files", "*.json")])
         if file_path:
-            self._load_model_from_path(Path(file_path), source="json")
+            self._load_model_file(Path(file_path))
 
     def open_generated_model(self) -> None:
         GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -584,56 +662,53 @@ class StaticAnalysisApp:
         if not file_path:
             return
 
-        path = Path(file_path)
-        try:
-            data = load_model_data(path)
-            mass_mapping = _load_companion_masses(path)
-        except Exception as exc:
-            self._show_error("Failed to load generated model", exc)
-            return
-
-        self._set_loaded_model(path, data, source="generated", mass_mapping=mass_mapping)
-        self.generated_model_name = path.stem
-        self.plot_type.set("Model View")
-        self._redraw_current_plot()
-        self._update_summary(
-            f"Loaded generated model: {path.name}\n"
-            f"Nodes: {len(data.get('nodes', []))}\n"
-            f"Elements: {len(data.get('elements', []))}\n"
-            f"{self._generated_mass_message()}"
-        )
+        self._load_model_file(Path(file_path), source="generated")
 
     def open_text_model(self) -> None:
         file_path = filedialog.askopenfilename(title="Open text model", filetypes=[("Text model files", "*.txt")])
-        if not file_path:
-            return
-
-        path = Path(file_path)
-        try:
-            data, mass_mapping = load_text_model(path)
-            text = path.read_text(encoding="utf-8")
-        except Exception as exc:
-            self._show_error("Failed to load text model", exc)
-            return
-
-        self._set_loaded_model(path, data, source="text", mass_mapping=mass_mapping)
-        self.text_model_path = path
-        self._open_text_editor(text)
-        self._update_summary(
-            f"Loaded text model: {path.name}\n"
-            f"Parsed {len(data['nodes'])} nodes, {len(data['elements'])} elements, "
-            f"{len(mass_mapping)} modal mass record(s)."
-        )
+        if file_path:
+            self._load_model_file(Path(file_path))
 
     def _load_model_from_path(self, path: Path, source: str) -> None:
+        """Backward-compatible wrapper around the unified loading pipeline."""
+        self._load_model_file(path, source=source)
+
+    def _load_model_file(self, path: Path, source: str | None = None) -> bool:
         try:
-            data = load_model_data(path)
+            data, embedded_masses = load_model_file_data(path)
+            companion_path = find_companion_mass_file(path)
+            companion_masses = load_companion_mass_mapping(path)
         except Exception as exc:
             self._show_error("Failed to load model", exc)
-            return
+            return False
 
-        self._set_loaded_model(path, data, source=source, mass_mapping=None)
-        self._update_summary(f"Loaded file: {path.name}\nRun static or modal analysis to view results.")
+        mass_mapping = companion_masses if companion_masses is not None else embedded_masses
+        if companion_masses is not None and companion_path is not None:
+            mass_source = f"companion mass file: {companion_path.name}"
+        elif mass_mapping:
+            mass_source = "generated mass mapping" if source == "generated" else "user-defined modal masses"
+        else:
+            mass_source = "none"
+
+        extension_source = {".json": "json", ".xml": "xml", ".txt": "text"}[path.suffix.lower()]
+        active_source = source or extension_source
+        self._set_loaded_model(
+            path,
+            data,
+            source=active_source,
+            mass_mapping=mass_mapping,
+            mass_source=mass_source,
+        )
+        if active_source == "generated":
+            self.generated_model_name = path.stem
+        if path.suffix.lower() == ".txt":
+            self.text_model_path = path
+        else:
+            self.text_model_path = None
+        self.plot_type.set("Model View")
+        self._redraw_current_plot()
+        self._update_summary()
+        return True
 
     def _set_loaded_model(
         self,
@@ -641,27 +716,57 @@ class StaticAnalysisApp:
         data: dict[str, Any],
         source: str,
         mass_mapping: dict[int, dict[str, float]] | None,
+        mass_source: str | None = None,
     ) -> None:
         self.loaded_path = path
+        self.current_file_path = path
         self.model_data = data
         self.text_mass_mapping = mass_mapping
+        self.modal_mass_source_label = mass_source or (
+            "user-defined modal masses" if mass_mapping else "none"
+        )
         self.input_source = source
         self.generated_model_name = None
         self.model_builder.load_from_structure_dict(data, mass_mapping)
+        if mass_mapping:
+            self.model_builder.modal_mass_source_type = self.modal_mass_source_label
+        analysis_options = data.get("analysis_options", {})
+        if isinstance(analysis_options, dict):
+            supported_options = {
+                key: value
+                for key, value in analysis_options.items()
+                if key in self.model_builder.analysis_options
+            }
+            self.model_builder.update_analysis_options(**supported_options)
+        convention = data.get("diagram_display_convention")
+        if isinstance(convention, dict):
+            self.force_diagram_convention = ForceDiagramConvention(
+                convention_name=str(convention.get("convention_name", "Ftool-style")),
+                moment_side=str(convention.get("moment_side", "tension")),
+                shear_positive_side=str(convention.get("shear_positive_side", "top")),
+                axial_positive_side=str(convention.get("axial_positive_side", "top")),
+            )
         self.static_result = None
         self.modal_result = None
         self.rha_result = None
         self.rsa_result = None
         self.selected_rha_node = None
         self.current_table = None
+        self.is_dirty = False
         self.clear_selection(redraw=False)
         self._draw_empty_canvas()
+        self._apply_analysis_options_to_controls()
+        self._update_window_title()
 
     def new_model(self) -> None:
         self.model_builder.clear()
+        self.current_file_path = None
+        self.modal_mass_source_label = "none"
+        self.is_dirty = True
         self.plot_type.set("Model View")
         self._refresh_model_from_builder(source_label="New Form Model", redraw=True)
         self._update_summary("New form-based model created.\nUse Define menu items to add model data.")
+        self._update_window_title()
 
     def new_assignment4_settlement_example(self) -> None:
         self._load_example_text_model("inputs/examples/a4_settlement_example.txt")
@@ -688,8 +793,15 @@ class StaticAnalysisApp:
         model_name: str,
         path: Path | None,
     ) -> None:
-        self._set_loaded_model(path, data, source="generated", mass_mapping=mass_mapping)
+        self._set_loaded_model(
+            path,
+            data,
+            source="generated",
+            mass_mapping=mass_mapping,
+            mass_source="generated mass mapping" if mass_mapping else "none",
+        )
         self.generated_model_name = model_name
+        self.is_dirty = path is None
         self.plot_type.set("Model View")
         self._redraw_current_plot()
         self._update_summary(
@@ -758,6 +870,140 @@ class StaticAnalysisApp:
         self.text_model_path = path
         self.loaded_path = path
         self._parse_current_text_editor(update_summary=True)
+
+    def serialize_current_model_state(self) -> dict[str, Any]:
+        """Return the current editable structural model without analysis results."""
+        if not self._sync_model_source_if_needed():
+            raise ValueError("The current model could not be synchronized before saving.")
+
+        data = deepcopy(self.model_data or {})
+        if self.input_source == "form":
+            builder_data = self.model_builder.to_structure_dict()
+            data.update(builder_data)
+        if not data:
+            raise ValueError("No model is available to save.")
+
+        data["analysis_options"] = deepcopy(self.model_builder.analysis_options)
+        convention = self.force_diagram_convention
+        data["diagram_display_convention"] = {
+            "convention_name": convention.convention_name,
+            "moment_side": convention.moment_side,
+            "shear_positive_side": convention.shear_positive_side,
+            "axial_positive_side": convention.axial_positive_side,
+        }
+        return data
+
+    def serialize_modal_mass_mapping(self) -> dict[int, dict[str, float]]:
+        """Return explicit modal masses only; fallback masses are never persisted."""
+        masses = self.model_builder.to_mass_mapping() if self.input_source == "form" else self.text_mass_mapping
+        if not masses:
+            return {}
+        return {
+            int(node_id): {
+                "ux": float(values.get("ux", 0.0)),
+                "uy": float(values.get("uy", 0.0)),
+                "rz": float(values.get("rz", 0.0)),
+            }
+            for node_id, values in masses.items()
+        }
+
+    def save_model(self) -> None:
+        path = getattr(self, "current_file_path", None)
+        if path is None or path.suffix.lower() != ".json":
+            self.save_model_as()
+            return
+        self._save_model_to_path(path)
+
+    def save_model_as(self) -> None:
+        file_path = filedialog.asksaveasfilename(
+            title="Save model as JSON",
+            defaultextension=".json",
+            filetypes=[("JSON model", "*.json"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+        path = Path(file_path)
+        if path.suffix.lower() != ".json":
+            path = path.with_suffix(".json")
+        self._save_model_to_path(path)
+
+    def _save_model_to_path(self, path: Path) -> bool:
+        try:
+            data = self.serialize_current_model_state()
+            masses = self.serialize_modal_mass_mapping()
+            mass_path = save_model_files(path, data, masses)
+        except Exception as exc:
+            self._show_error("Failed to save model", exc)
+            return False
+
+        self.current_file_path = path
+        self.loaded_path = path
+        self.is_dirty = False
+        self._update_window_title()
+        message = f"Saved model: {path}"
+        if mass_path is not None:
+            message += f"\nSaved modal masses: {mass_path}"
+        else:
+            message += (
+                "\nNo explicit modal mass mapping was saved. "
+                "Default free-ux fallback masses are never saved silently."
+            )
+        messagebox.showinfo("Model saved", message)
+        self._update_summary()
+        return True
+
+    def save_model_package(self) -> None:
+        default_name = f"{self._current_model_name()}_package.zip"
+        file_path = filedialog.asksaveasfilename(
+            title="Save model package",
+            initialfile=default_name,
+            defaultextension=".zip",
+            filetypes=[("ZIP package", "*.zip"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        package_path = Path(file_path)
+        if package_path.suffix.lower() != ".zip":
+            package_path = package_path.with_suffix(".zip")
+        try:
+            data = self.serialize_current_model_state()
+            masses = self.serialize_modal_mass_mapping()
+            create_model_package(
+                package_path,
+                self._current_model_name(),
+                data,
+                masses,
+                self.modal_mass_source_label,
+            )
+        except Exception as exc:
+            self._show_error("Failed to save model package", exc)
+            return
+
+        self.is_dirty = False
+        self._update_window_title()
+        message = f"Saved model package: {package_path}"
+        if not masses:
+            message += (
+                "\nThe current model has no explicit modal mass mapping. "
+                "Default fallback masses were not included."
+            )
+        messagebox.showinfo("Model package saved", message)
+
+    def _current_model_name(self) -> str:
+        path = getattr(self, "current_file_path", None)
+        if path is not None:
+            return path.stem
+        if self.generated_model_name:
+            return self.generated_model_name
+        return "ce4011_model"
+
+    def _update_window_title(self) -> None:
+        if not hasattr(self, "root"):
+            return
+        name = self._current_model_name() if self.model_data is not None else "Untitled"
+        dirty = " *" if getattr(self, "is_dirty", False) else ""
+        self.root.title(f"CE4011 Structural Analysis GUI - {name}{dirty}")
 
     def _open_text_editor(self, text: str) -> None:
         if self.text_editor is not None and self.text_editor.winfo_exists():
@@ -843,12 +1089,16 @@ class StaticAnalysisApp:
             structure = Structure.from_dict(self.model_data)
             mass_mapping = self.text_mass_mapping if self.text_mass_mapping else None
             if not mass_mapping:
-                mass_value = _parse_positive_float(self.default_mass.get(), "default lateral mass")
+                mass_value = _parse_positive_float(
+                    str(self.model_builder.analysis_options["default_lateral_mass"]),
+                    "default lateral mass",
+                )
                 mass_mapping = build_default_ux_mass_mapping(structure, mass_value)
             if not mass_mapping:
                 raise ValueError("No free ux translational DOFs were found for automatic modal mass assignment.")
 
             modal = solve_modal_analysis(structure, mass_mapping, n_modes=n_modes)
+            modal["units"] = self._current_units().to_dict()
             self.modal_result = package_modal_results(modal, structure)
             self.modal_result["mass_source_summary"] = mass_mapping_summary(
                 mass_mapping,
@@ -915,7 +1165,9 @@ class StaticAnalysisApp:
 
     def _refresh_model_from_builder(self, *, source_label: str = "Form Model", redraw: bool = True) -> None:
         """Synchronize GUI model state from records entered through Define dialogs."""
-        data = self.model_builder.to_structure_dict()
+        builder_data = self.model_builder.to_structure_dict()
+        data = deepcopy(self.model_data or {})
+        data.update(builder_data)
         masses = self.model_builder.to_mass_mapping()
         previous_data = self.model_data
         previous_masses = self.text_mass_mapping or {}
@@ -927,6 +1179,10 @@ class StaticAnalysisApp:
         self.text_mass_mapping = masses if masses else None
         self.input_source = "form"
         self.generated_model_name = source_label
+        if masses_changed:
+            self.modal_mass_source_label = "user-defined modal masses" if masses else "none"
+        if data_changed or masses_changed:
+            self.is_dirty = True
 
         if data_changed:
             self.static_result = None
@@ -947,16 +1203,15 @@ class StaticAnalysisApp:
         if redraw and self.plot_type.get() in MODEL_VIEW_TYPES:
             self._redraw_current_plot()
         self._update_summary()
+        self._update_window_title()
 
     def _apply_analysis_options_to_controls(self) -> None:
         options = self.model_builder.analysis_options
-        self.default_mass.set(str(options["default_lateral_mass"]))
         self.num_modes.set(str(options["num_modes"]))
         self.mode_scale.set(str(options["mode_shape_scale"]))
 
     def _apply_controls_to_analysis_options(self) -> None:
         self.model_builder.update_analysis_options(
-            default_lateral_mass=float(self.default_mass.get()),
             num_modes=int(self.num_modes.get()),
             mode_shape_scale=float(self.mode_scale.get()),
         )
@@ -1022,6 +1277,13 @@ class StaticAnalysisApp:
             kwargs: dict[str, Any] = {"ax": self.ax}
             if plot_name != "Geometry":
                 kwargs["scale"] = self._static_plot_scale(plot_name)
+            if plot_name in {
+                "Axial Force Diagram",
+                "Shear Force Diagram",
+                "Bending Moment Diagram",
+                "Section Force Stations",
+            }:
+                kwargs["convention"] = self.force_diagram_convention
             plot_func(self.static_result, **kwargs)
         elif plot_name in DRIFT_PLOT_TYPES:
             if self.static_result is None:
@@ -1076,7 +1338,7 @@ class StaticAnalysisApp:
                 scale=scale,
                 ax=self.ax,
                 show_values=bool(self.show_modal_values.get()),
-                sign_convention=self.modal_sign_convention.get(),
+                sign_convention=DEFAULT_MODAL_SIGN_CONVENTION,
             )
         elif plot_name == "Modal Frequencies":
             plot_modal_frequencies(self.modal_result, ax=self.ax)
@@ -1084,6 +1346,36 @@ class StaticAnalysisApp:
             plot_modal_angular_frequencies(self.modal_result, ax=self.ax)
         elif plot_name == "Modal Periods":
             plot_modal_periods(self.modal_result, ax=self.ax)
+        elif plot_name == "Modal Force State":
+            parameters = modal_response_parameters_from_result(self._modal_display_result(), normalization="display")
+            mode_number = int(self.rha_force_mode.get())
+            time_value = None
+            if bool(self.modal_force_use_rha.get()):
+                if self.rha_result is None:
+                    raise ValueError("Run response history analysis first, or use coefficient mode.")
+                acceleration = compute_modal_pseudo_acceleration_history(self.rha_result, parameters)
+                mode_index = mode_number - 1
+                if mode_index < 0 or mode_index >= acceleration.shape[0]:
+                    raise ValueError("Selected mode is not available in the RHA result.")
+                time_text = self.rha_force_time_index.get().strip()
+                if time_text:
+                    time_index = int(time_text)
+                else:
+                    time_index = int(np.nanargmax(np.abs(acceleration[mode_index])))
+                if time_index < 0 or time_index >= acceleration.shape[1]:
+                    raise ValueError("Selected RHA time index is outside the available history.")
+                A_value = float(acceleration[mode_index, time_index])
+                time_value = float(self.rha_result["time"][time_index])
+            else:
+                A_value = float(self.modal_force_a_value.get())
+            plot_modal_force_state(
+                self._current_model_view_data() or self.modal_result,
+                parameters,
+                mode_number=mode_number,
+                A_value=A_value,
+                time_value=time_value,
+                ax=self.ax,
+            )
         else:
             raise ValueError(f"Unknown modal plot type: {plot_name}")
 
@@ -1110,6 +1402,23 @@ class StaticAnalysisApp:
             plot_rsa_combined_roof_response(self.rsa_result, ax=self.ax)
         elif plot_name == "RSA Combined Story Drift Envelope":
             plot_rsa_combined_story_drift_envelope(self.rsa_result, ax=self.ax)
+        elif plot_name == "RSA Modal Force State":
+            factor = self.rsa_result.get("response_factor_results")
+            if not factor:
+                raise ValueError("RSA modal response factors are unavailable; rerun RSA after modal analysis.")
+            mode_number = int(self.rha_force_mode.get())
+            mode_index = mode_number - 1
+            sa = factor["modal_spectrum_values"]
+            if mode_index < 0 or mode_index >= len(sa):
+                raise ValueError("Selected mode is outside the RSA modes used.")
+            plot_modal_force_state(
+                self._current_model_view_data() or self.modal_result,
+                factor["modal_response_parameters"],
+                mode_number=mode_number,
+                A_value=float(sa[mode_index]),
+                ax=self.ax,
+                title=f"RSA Modal Force State — Mode {mode_number}, Sa(T_n)={float(sa[mode_index]):.5g}",
+            )
         else:
             raise ValueError(f"Unknown RSA plot type: {plot_name}")
 
@@ -1132,8 +1441,11 @@ class StaticAnalysisApp:
         }
         mapping[plot_name](self.rha_result, ax=self.ax)
 
-    def _static_plot_scale(self, plot_name: str) -> float:
-        if plot_name in {"Deformed Shape", "Hermite Deformed Shape"}:
+    def _static_plot_scale(self, plot_name: str) -> float | None:
+        if plot_name == "Deformed Shape":
+            scale = float(self.model_builder.analysis_options["static_deformation_scale"])
+            return None if scale == PLOT_SCALES["Deformed Shape"] else scale
+        if plot_name == "Hermite Deformed Shape":
             return float(self.model_builder.analysis_options["static_deformation_scale"])
         if plot_name in {"Axial Force Diagram", "Shear Force Diagram", "Bending Moment Diagram", "Section Force Stations"}:
             return float(self.model_builder.analysis_options["force_diagram_scale"])
@@ -1161,7 +1473,30 @@ class StaticAnalysisApp:
             loaded_name = self.loaded_path.name if self.loaded_path is not None else "(unknown)"
             if self.loaded_path is None and self.generated_model_name:
                 loaded_name = self.generated_model_name
-            lines = [f"Loaded file: {loaded_name}", f"Current plot: {self.plot_type.get()}"]
+            units = self._current_units()
+            default_note = " (default)" if self._units_are_defaulted() else ""
+            lines = [
+                f"Loaded file: {loaded_name}",
+                f"Units: {units.name}{default_note}",
+                f"Diagram convention: {self.force_diagram_convention.convention_name}",
+                f"Current plot: {self.plot_type.get()}",
+            ]
+            explicit_masses = self.text_mass_mapping or {}
+            if explicit_masses:
+                lines.extend(
+                    [
+                        f"Mass source: {self.modal_mass_source_label}",
+                        f"Nodes with modal mass: {len(explicit_masses)}",
+                        f"Total ux mass: {sum(float(values.get('ux', 0.0)) for values in explicit_masses.values()):.6g}",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        "Mass source: default free-ux fallback",
+                        "No modal mass mapping found; default free-ux fallback will be used.",
+                    ]
+                )
 
             if self.static_result is not None:
                 max_disp = max(abs(value) for value in self.static_result["displacement_vector"])
@@ -1198,6 +1533,9 @@ class StaticAnalysisApp:
                         ]
                     )
                     lines.extend(self._model_view_validation_lines())
+            load_warning = static_load_warning(self.model_data)
+            if load_warning:
+                lines.extend(["", load_warning])
 
             if self.modal_result is not None:
                 lines.extend(self._modal_summary_lines())
@@ -1745,23 +2083,57 @@ class StaticAnalysisApp:
 
     def show_modal_participation_table(self) -> None:
         if self.modal_result is None:
-            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            messagebox.showerror("No modal results", "Run modal analysis first.")
             return
-        headers, rows = format_modal_participation_rows(self.modal_result)
-        if not rows:
+        try:
+            headers, rows = format_modal_participation_rows(self._modal_display_result())
+        except ValueError:
             messagebox.showerror(
-                "No modal participation data",
-                "Modal participation data are not available for this model/result.",
+                "Modal response parameters unavailable",
+                "Modal response parameters require modal masses and floor heights.",
             )
             return
         self._open_result_table("Modal Participation Factors", headers, rows)
 
     def show_modal_properties_table(self) -> None:
         if self.modal_result is None:
-            messagebox.showerror("No modal results", "Run modal analysis before opening modal result tables.")
+            messagebox.showerror("No modal results", "Run modal analysis first.")
             return
-        headers, rows = format_modal_properties_rows(self._modal_display_result())
+        try:
+            headers, rows = format_modal_properties_rows(self._modal_display_result())
+        except ValueError:
+            messagebox.showerror(
+                "Modal response parameters unavailable",
+                "Modal response parameters require modal masses and floor heights.",
+            )
+            return
         self._open_result_table("Modal Properties", headers, rows)
+
+    def show_modal_response_parameters_table(self) -> None:
+        """Compatibility entry point for the former combined table."""
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis first.")
+            return
+        headers, rows = format_modal_response_parameter_rows(self._modal_display_result())
+        self._open_result_table("Modal Response Parameters", headers, rows)
+
+    def show_modal_force_coefficients_table(self) -> None:
+        """Compatibility entry point; the visible table is Modal Response Factors."""
+        self.show_modal_response_factors_table()
+
+    def show_modal_response_factors_table(self) -> None:
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run modal analysis first.")
+            return
+        try:
+            headers, rows = format_modal_response_factors_rows(self._modal_display_result())
+        except ValueError:
+            messagebox.showerror(
+                "Modal response parameters unavailable",
+                "Modal response parameters require modal masses and floor heights.",
+            )
+            return
+        self._open_result_table("Modal Response Factors", headers, rows)
 
     def show_modal_dof_classification_table(self) -> None:
         if self.modal_result is None:
@@ -1819,12 +2191,62 @@ class StaticAnalysisApp:
         headers, rows = format_rha_node_peak_response_rows(self.rha_result)
         self._open_result_table("RHA Node Peak Responses", headers, rows)
 
+    def _open_modal_rha_table(self, title: str, formatter) -> None:
+        if self.rha_result is None:
+            messagebox.showerror("No RHA results", "Run Response History Analysis first.")
+            return
+        if self.modal_result is None:
+            messagebox.showerror("No modal results", "Run Modal Analysis first.")
+            return
+        headers, rows = formatter(self.rha_result, self._modal_display_result())
+        self._open_result_table(title, headers, rows)
+
+    def show_rha_modal_acceleration_table(self) -> None:
+        self._open_modal_rha_table("RHA Modal A(t)", format_rha_modal_acceleration_rows)
+
+    def show_rha_modal_displacement_table(self) -> None:
+        self._open_modal_rha_table("RHA Modal Displacement Contributions", format_rha_modal_displacement_rows)
+
+    def show_rha_modal_force_table(self) -> None:
+        self._open_modal_rha_table("RHA Modal Force Contributions", format_rha_modal_force_rows)
+
+    def show_rha_modal_base_response_table(self) -> None:
+        self._open_modal_rha_table("RHA Modal Base Response", format_rha_modal_base_response_rows)
+
+    def show_rha_modal_peak_responses_table(self) -> None:
+        self._open_modal_rha_table("RHA Modal Peak Responses", format_rha_modal_peak_response_rows)
+
     def show_rsa_modal_peak_responses_table(self) -> None:
         if self.rsa_result is None:
             messagebox.showerror("No RSA results", "Run Response Spectrum Analysis before opening RSA tables.")
             return
         headers, rows = format_rsa_modal_peak_response_rows(self.rsa_result)
         self._open_result_table("RSA Modal Peak Responses", headers, rows)
+
+    def _open_rsa_factor_table(self, title: str, formatter) -> None:
+        if self.rsa_result is None:
+            messagebox.showerror("No RSA results", "Run Response Spectrum Analysis first.")
+            return
+        if not self.rsa_result.get("response_factor_results"):
+            messagebox.showerror(
+                "RSA response factors unavailable",
+                "Modal response parameters require modal masses and floor heights. Rerun modal analysis and RSA.",
+            )
+            return
+        headers, rows = formatter(self.rsa_result)
+        self._open_result_table(title, headers, rows)
+
+    def show_rsa_spectrum_at_modal_periods_table(self) -> None:
+        self._open_rsa_factor_table("RSA Spectrum at Modal Periods", format_rsa_spectrum_at_modal_period_rows)
+
+    def show_rsa_modal_responses_table(self) -> None:
+        self._open_rsa_factor_table("RSA Modal Responses", format_rsa_modal_response_factor_rows)
+
+    def show_rsa_modal_base_responses_table(self) -> None:
+        self._open_rsa_factor_table("RSA Modal Base Responses", format_rsa_modal_base_response_factor_rows)
+
+    def show_rsa_cqc_correlation_table(self) -> None:
+        self._open_rsa_factor_table("RSA CQC Correlation Matrix", format_rsa_cqc_correlation_rows)
 
     def show_rsa_modal_peak_story_drifts_table(self) -> None:
         if self.rsa_result is None:
@@ -1881,7 +2303,7 @@ class StaticAnalysisApp:
             "",
             "Modal analysis: run",
             f"Modes computed: {len(self.modal_result['frequencies_hz'])}",
-            f"Mode-shape sign convention: {self.modal_sign_convention.get()}",
+            f"Mode-shape sign convention: {DEFAULT_MODAL_SIGN_CONVENTION}",
             mass_assumption,
         ]
         mass_summary = self.modal_result.get("mass_source_summary", {})
@@ -1927,6 +2349,15 @@ class StaticAnalysisApp:
             "RSA: run",
             f"Modes used: {self.rsa_result.get('modes_used', '')}",
         ]
+        factor = self.rsa_result.get("response_factor_results", {})
+        combined = self.rsa_result.get("response_factor_combinations", {})
+        if factor:
+            lines.extend(
+                [
+                    f"Spectrum source: {factor.get('spectrum_source', '')}",
+                    f"Combination methods: {', '.join(combined.get('methods', []))}",
+                ]
+            )
         peak_rows = self.rsa_result.get("modal_peak_rows", [])[:4]
         if peak_rows:
             lines.append("RSA peak roof ux by mode:")
@@ -1959,30 +2390,36 @@ class StaticAnalysisApp:
 
     def _generated_mass_message(self) -> str:
         if self.text_mass_mapping:
-            return "Generated floor masses assigned to ux DOFs."
-        return "No generated mass mapping; using default mass field for modal analysis."
+            return f"Mass source: {self.modal_mass_source_label}"
+        return "No modal mass mapping found; default free-ux fallback will be used."
 
     def _pre_modal_mass_message(self) -> str:
-        if self.input_source == "generated":
-            return self._generated_mass_message()
-        return "Mass assumption: default mass is assigned to free ux DOFs only."
+        if self.text_mass_mapping:
+            return f"Mass source: {self.modal_mass_source_label}"
+        return "No modal mass mapping found; default free-ux fallback will be used."
 
     def _active_mass_message(self) -> str:
-        if self.input_source == "generated":
-            return "Mass assumption: generated floor masses assigned to ux DOFs."
-        return "Mass assumption: using modal mass records from text/form model."
+        return f"Mass source: {self.modal_mass_source_label}"
 
     def _modal_mass_source_type(self, mass_mapping: dict[int, dict[str, float]]) -> str:
-        if self.input_source == "generated" and self.text_mass_mapping:
-            return "generated model companion mass file"
         if self.text_mass_mapping:
-            return getattr(self.model_builder, "modal_mass_source_type", "manual")
+            return self.modal_mass_source_label
         if mass_mapping:
             return "default free-ux fallback"
         return "none"
 
     def _modal_display_result(self) -> dict[str, Any]:
-        return apply_mode_shape_sign_convention(self.modal_result, self.modal_sign_convention.get())
+        return apply_mode_shape_sign_convention(self.modal_result, DEFAULT_MODAL_SIGN_CONVENTION)
+
+    def _current_units(self):
+        if self.model_data is not None:
+            return normalize_unit_system(self.model_data.get("units"))
+        return getattr(self.model_builder, "units", default_unit_system())
+
+    def _units_are_defaulted(self) -> bool:
+        if self.model_data is not None:
+            return bool(self.model_data.get("units_defaulted", "units" not in self.model_data))
+        return bool(getattr(self.model_builder, "units_defaulted", False))
 
     def _thermal_load_count(self) -> int:
         if self.model_data is None:
@@ -2079,6 +2516,28 @@ class StaticAnalysisApp:
         self._ensure_form_source()
         open_analysis_options_dialog(self.root, self.model_builder, on_apply=self._on_analysis_options_applied)
 
+    def define_model_units(self) -> None:
+        self._ensure_form_source()
+        open_model_units_dialog(self.root, self.model_builder, on_apply=self._on_model_units_applied)
+
+    def _on_model_units_applied(self) -> None:
+        self._refresh_model_from_builder(redraw=True)
+
+    def open_diagram_display_conventions(self) -> None:
+        open_diagram_conventions_dialog(
+            self.root,
+            self.force_diagram_convention,
+            on_apply=self._on_diagram_convention_applied,
+        )
+
+    def _on_diagram_convention_applied(self, convention: ForceDiagramConvention) -> None:
+        self.force_diagram_convention = convention
+        self.is_dirty = True
+        self._update_window_title()
+        if self.plot_type.get() in {"Axial Force Diagram", "Shear Force Diagram", "Bending Moment Diagram"}:
+            self._redraw_current_plot()
+        self._update_summary()
+
     def _on_analysis_options_applied(self) -> None:
         self._apply_analysis_options_to_controls()
         self._refresh_model_from_builder(redraw=True)
@@ -2104,6 +2563,11 @@ class StaticAnalysisApp:
             "Model Summary",
             "\n".join(
                 [
+                    f"Units: {self._current_units().name}",
+                    f"Force: {self._current_units().force}",
+                    f"Length: {self._current_units().length}",
+                    f"Mass: {self._current_units().mass}",
+                    f"Temperature: {self._current_units().temperature}",
                     f"Nodes: {len(self.model_data.get('nodes', []))}",
                     f"Materials: {len(self.model_data.get('materials', []))}",
                     f"Sections: {len(self.model_data.get('sections', []))}",
@@ -2137,7 +2601,8 @@ class StaticAnalysisApp:
             "load combinations, or full SAP2000-style tables. Selection highlights are available on "
             "geometry-shaped plots, not modal frequency/period bar charts.\n\n"
             "Eigenvector sign is arbitrary; mode shapes may be multiplied by -1 without changing "
-            "the physical mode. The GUI sign convention only changes displayed mode-shape plots and tables.",
+            "the physical mode. Displayed mode shapes and tables use the roof-ux-positive convention "
+            "when available, with the existing largest-component fallback.",
         )
 
     def show_about(self) -> None:
@@ -2152,32 +2617,135 @@ def load_model_data(path: Path) -> dict[str, Any]:
     """Load XML or JSON model data into the Structure.from_dict schema."""
     suffix = path.suffix.lower()
     if suffix == ".xml":
-        return load_structure_from_xml(path)
+        data = load_structure_from_xml(path)
+        data.setdefault("units", default_unit_system().to_dict())
+        data.setdefault("units_defaulted", True)
+        return data
     if suffix == ".json":
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("JSON model root must be an object.")
+        if "units" not in data:
+            data["units"] = default_unit_system().to_dict()
+            data["units_defaulted"] = True
+        else:
+            data["units"] = normalize_unit_system(data["units"]).to_dict()
+            data.setdefault("units_defaulted", False)
         return data
     raise ValueError(f"Unsupported model file type: {path.suffix}")
 
 
-def _load_companion_masses(path: Path) -> dict[int, dict[str, float]] | None:
-    mass_path = path.with_name(f"{path.stem}_masses.json")
-    if not mass_path.exists():
+def load_model_file_data(path: Path) -> tuple[dict[str, Any], dict[int, dict[str, float]] | None]:
+    """Dispatch a supported model file and return model data plus embedded masses."""
+    suffix = path.suffix.lower()
+    if suffix == ".txt":
+        data, masses = load_text_model(path)
+        return data, masses or None
+    if suffix in {".json", ".xml"}:
+        return load_model_data(path), None
+    raise ValueError(f"Unsupported model file type: {path.suffix}")
+
+
+def find_companion_mass_file(model_path: Path) -> Path | None:
+    """Return the conventional sibling *_masses.json path when it exists."""
+    mass_path = model_path.with_name(f"{model_path.stem}_masses.json")
+    return mass_path if mass_path.exists() else None
+
+
+def load_companion_mass_mapping(model_path: Path) -> dict[int, dict[str, float]] | None:
+    """Load a sibling companion mass mapping for any supported model format."""
+    mass_path = find_companion_mass_file(model_path)
+    if mass_path is None:
         return None
     with mass_path.open("r", encoding="utf-8") as f:
         raw = json.load(f)
     if not isinstance(raw, dict):
-        raise ValueError("Generated mass mapping JSON root must be an object.")
-    return {
-        int(node_id): {
+        raise ValueError("Companion mass mapping JSON root must be an object.")
+    mapping: dict[int, dict[str, float]] = {}
+    for node_id, values in raw.items():
+        if not isinstance(values, dict):
+            raise ValueError(f"Companion mass record for node {node_id} must be an object.")
+        mapping[int(node_id)] = {
             "ux": float(values.get("ux", 0.0)),
             "uy": float(values.get("uy", 0.0)),
             "rz": float(values.get("rz", 0.0)),
         }
-        for node_id, values in raw.items()
+    return mapping
+
+
+def _load_companion_masses(path: Path) -> dict[int, dict[str, float]] | None:
+    """Backward-compatible alias for companion mass loading."""
+    return load_companion_mass_mapping(path)
+
+
+def companion_mass_path(model_path: Path) -> Path:
+    return model_path.with_name(f"{model_path.stem}_masses.json")
+
+
+def save_model_files(
+    model_path: Path,
+    model_data: dict[str, Any],
+    modal_masses: dict[int, dict[str, float]] | None = None,
+) -> Path | None:
+    """Save canonical JSON model data and any explicit companion modal masses."""
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    model_path.write_text(json.dumps(model_data, indent=2) + "\n", encoding="utf-8")
+    mass_path = companion_mass_path(model_path)
+    if not modal_masses:
+        if mass_path.exists():
+            mass_path.unlink()
+        return None
+
+    serializable_masses = {
+        str(node_id): {
+            "ux": float(values.get("ux", 0.0)),
+            "uy": float(values.get("uy", 0.0)),
+            "rz": float(values.get("rz", 0.0)),
+        }
+        for node_id, values in sorted(modal_masses.items())
     }
+    mass_path.write_text(json.dumps(serializable_masses, indent=2) + "\n", encoding="utf-8")
+    return mass_path
+
+
+def create_model_package(
+    package_path: Path,
+    model_name: str,
+    model_data: dict[str, Any],
+    modal_masses: dict[int, dict[str, float]] | None,
+    mass_source: str,
+) -> None:
+    """Write a self-contained ZIP with model JSON, optional masses, and README."""
+    safe_name = Path(model_name).stem or "ce4011_model"
+    units = normalize_unit_system(model_data.get("units"))
+    readme_lines = [
+        f"Model name: {safe_name}",
+        f"Units: {units.name}",
+        f"Nodes: {len(model_data.get('nodes', []))}",
+        f"Elements: {len(model_data.get('elements', []))}",
+        f"Modal mass source: {mass_source if modal_masses else 'default free-ux fallback (not saved)'}",
+        "",
+        "Open this model in the CE4011 GUI using:",
+        f"File -> Open Model... -> {safe_name}.json",
+    ]
+    package_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(f"{safe_name}.json", json.dumps(model_data, indent=2) + "\n")
+        if modal_masses:
+            serializable_masses = {
+                str(node_id): {
+                    "ux": float(values.get("ux", 0.0)),
+                    "uy": float(values.get("uy", 0.0)),
+                    "rz": float(values.get("rz", 0.0)),
+                }
+                for node_id, values in sorted(modal_masses.items())
+            }
+            archive.writestr(
+                f"{safe_name}_masses.json",
+                json.dumps(serializable_masses, indent=2) + "\n",
+            )
+        archive.writestr("README.txt", "\n".join(readme_lines) + "\n")
 
 
 def build_default_ux_mass_mapping(structure: Structure, mass_value: float) -> dict[int, dict[str, float]]:
@@ -2188,6 +2756,32 @@ def build_default_ux_mass_mapping(structure: Structure, mass_value: float) -> di
         if ux_eq != 0:
             mapping[int(node_id)] = {"ux": mass_value, "uy": 0.0, "rz": 0.0}
     return mapping
+
+
+def static_load_warning(model_data: dict[str, Any] | None) -> str | None:
+    """Return an explanatory warning for models with no ordinary static actions."""
+    if not model_data:
+        return None
+    if model_data.get("nodal_loads"):
+        return None
+    if model_data.get("member_loads") or model_data.get("thermal_loads") or model_data.get("support_settlements"):
+        return None
+    raw_elements = model_data.get("elements", [])
+    elements = raw_elements.values() if isinstance(raw_elements, dict) else raw_elements
+    for element in elements:
+        if element.get("member_loads"):
+            return None
+    raw_nodes = model_data.get("nodes", [])
+    nodes = raw_nodes.values() if isinstance(raw_nodes, dict) else raw_nodes
+    for node in nodes:
+        prescribed = node.get("prescribed_displacements", {})
+        if any(abs(float(prescribed.get(dof, 0.0))) > 0.0 for dof in ("ux", "uy", "rz")):
+            return None
+    return (
+        "No static load records found. Static response and N/V/M diagrams will be zero. "
+        "This model may be intended for modal/RHA/RSA analysis. "
+        "Use a static-equivalent modal load case for static force diagrams."
+    )
 
 
 def _parse_positive_float(value: str, label: str) -> float:

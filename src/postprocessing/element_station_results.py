@@ -140,6 +140,29 @@ def frame_station_results(
     return rows
 
 
+def frame_internal_end_section_forces(member_force: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """Convert recovered nodal actions to physical section-face forces.
+
+    Recovered local member-end forces are nodal actions. The j-end action acts
+    on the opposite cut face, so its section-force signs are reversed before
+    comparing it with an i-to-j internal force diagram.
+    """
+    i_end = member_force.get("node_i", {})
+    j_end = member_force.get("node_j", {})
+    return {
+        "i": {
+            "N": float(i_end.get("nx", 0.0)),
+            "V": float(i_end.get("vy", 0.0)),
+            "M": float(i_end.get("mz", 0.0)),
+        },
+        "j": {
+            "N": -float(j_end.get("nx", 0.0)),
+            "V": -float(j_end.get("vy", 0.0)),
+            "M": -float(j_end.get("mz", 0.0)),
+        },
+    }
+
+
 def all_frame_station_results(result: dict[str, Any], n_stations: int = DEFAULT_STATION_COUNT) -> list[dict[str, Any]]:
     """Return station rows for all frame elements in a static result package."""
     rows: list[dict[str, Any]] = []
@@ -150,33 +173,41 @@ def all_frame_station_results(result: dict[str, Any], n_stations: int = DEFAULT_
 
 
 def section_force_at_x(member_force: dict[str, Any], element: dict[str, Any], x_local: float) -> dict[str, float]:
-    """Return N, V, M at local station ``x_local`` using existing diagram convention."""
+    """Return internal N, V, M at local station ``x_local``.
+
+    The display convention starts from the physical i-end section forces and
+    enforces local equilibrium along +x:
+
+    ``V(x) = V_i - integral(q_y dx)`` and ``dM/dx = -V``.
+
+    This converts recovered nodal end actions into internal cut forces rather
+    than connecting raw i/j nodal moments directly.
+    """
     length = float(element["length"])
     if length <= 0.0:
         raise ValueError("element length must be positive.")
     x = max(0.0, min(length, float(x_local)))
-    i_end = member_force.get("node_i", {})
-    j_end = member_force.get("node_j", {})
-    n0 = float(i_end.get("nx", 0.0))
-    n1 = -float(j_end.get("nx", 0.0))
-    v0 = float(i_end.get("vy", 0.0))
-    m0 = float(i_end.get("mz", 0.0))
+    end_forces = frame_internal_end_section_forces(member_force)
+    n0 = end_forces["i"]["N"]
+    n1 = end_forces["j"]["N"]
+    v0 = end_forces["i"]["V"]
+    m0 = end_forces["i"]["M"]
     axial = n0 + (n1 - n0) * x / length
     shear = v0
-    moment = m0 + v0 * x
+    moment = m0 - v0 * x
 
     for load in element.get("member_loads", []):
         load_type = str(load.get("type", "")).lower()
         direction = str(load.get("direction", "local_y")).lower()
         if load_type == "udl" and direction == "local_y":
             w = float(load.get("w", 0.0))
-            shear += w * x
+            shear -= w * x
             moment += 0.5 * w * x * x
         elif load_type == "point" and direction == "local_y":
             p = float(load.get("p", 0.0))
             a = float(load.get("a", 0.0))
             if x >= a:
-                shear += p
+                shear -= p
                 moment += p * (x - a)
         elif load_type == "udl" and direction == "local_x":
             w = float(load.get("w", 0.0))
@@ -186,6 +217,11 @@ def section_force_at_x(member_force: dict[str, Any], element: dict[str, Any], x_
             a = float(load.get("a", 0.0))
             if x >= a:
                 axial += p
+
+    if abs(x - length) <= 1.0e-12 * max(length, 1.0):
+        axial = end_forces["j"]["N"]
+        shear = end_forces["j"]["V"]
+        moment = end_forces["j"]["M"]
 
     return {"N": axial, "V": shear, "M": moment}
 

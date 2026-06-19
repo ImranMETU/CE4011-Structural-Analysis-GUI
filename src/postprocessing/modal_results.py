@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from units.unit_system import default_unit_system, normalize_unit_system
 
 
 TRANSLATIONAL_DOFS = {"ux", "uy"}
@@ -23,6 +24,10 @@ def package_modal_results(
     normalized_node_modes = node_keyed_mode_shapes(modal_result, normalized_modes, structure)
 
     packaged = {
+        "units": normalize_unit_system(
+            modal_result.get("units")
+            or (getattr(structure, "units", None) if structure is not None else None)
+        ).to_dict(),
         "eigenvalues": np.asarray(modal_result["eigenvalues"], dtype=float),
         "omega": np.asarray(modal_result["omega"], dtype=float),
         "frequencies_hz": np.asarray(modal_result["frequencies_hz"], dtype=float),

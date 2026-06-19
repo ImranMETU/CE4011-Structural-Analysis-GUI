@@ -7,8 +7,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = ROOT / "src"
+IO_ROOT = SRC_ROOT / "io"
 
-for path in (SRC_ROOT, ROOT):
+for path in (SRC_ROOT, IO_ROOT, ROOT):
     path_str = str(path)
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
@@ -19,6 +20,7 @@ from gui.result_tables import (  # noqa: E402
 )
 from postprocessing.element_station_results import (  # noqa: E402
     all_frame_station_results,
+    frame_internal_end_section_forces,
     frame_station_results,
     hermite_deformed_polyline,
     hermite_shape_values,
@@ -26,6 +28,8 @@ from postprocessing.element_station_results import (  # noqa: E402
     section_force_at_x,
     station_xis,
 )
+from postprocessing.static_results import run_static_analysis  # noqa: E402
+from text_loader import load_text_model  # noqa: E402
 
 
 def _static_result(member_loads=None) -> dict:
@@ -109,8 +113,19 @@ def test_station_force_table_rows_have_expected_columns():
     headers, force_rows = format_element_station_force_rows(_static_result(), n_stations=2)
     slope_headers, slope_rows = format_element_deformed_slope_rows(_static_result(), n_stations=2)
 
-    assert headers == ["Element", "Type", "Station", "xi", "x_local", "global_x", "global_y", "N", "V", "M"]
-    assert slope_headers[-3:] == ["u_local", "v_local", "slope_rad"]
+    assert headers == [
+        "Element",
+        "Type",
+        "Station",
+        "xi [-]",
+        "x_local [m]",
+        "global_x [m]",
+        "global_y [m]",
+        "N [N]",
+        "V [N]",
+        "M [N-m]",
+    ]
+    assert slope_headers[-3:] == ["u_local [m]", "v_local [m]", "slope [rad]"]
     assert len(force_rows) == 2
     assert len(slope_rows) == 2
 
@@ -129,7 +144,65 @@ def test_point_load_station_shear_has_piecewise_jump():
     before = section_force_at_x(member_force, element, 4.0)["V"]
     after = section_force_at_x(member_force, element, 6.0)["V"]
 
-    assert after - before == pytest.approx(-3.0)
+    assert after - before == pytest.approx(3.0)
+
+
+def test_cantilever_tip_load_reconstructs_triangular_bending_moment():
+    data, _masses = load_text_model(ROOT / "inputs" / "examples" / "basic_cantilever_beam.txt")
+    result = run_static_analysis(data)
+
+    rows = frame_station_results(result, 1, n_stations=5)
+    moments = [row["M"] for row in rows]
+
+    assert moments[0] == pytest.approx(10000.0 * 5.0)
+    assert moments[-1] == pytest.approx(0.0, abs=1.0e-8)
+    assert max(abs(value) for value in moments) == pytest.approx(50000.0)
+    first_differences = [moments[i + 1] - moments[i] for i in range(len(moments) - 1)]
+    assert first_differences == pytest.approx([first_differences[0]] * len(first_differences))
+
+
+def test_no_member_load_uses_converted_j_end_section_moment():
+    member_force = {
+        "node_i": {"nx": 0.0, "vy": 3.0, "mz": 20.0},
+        "node_j": {"nx": 0.0, "vy": -3.0, "mz": -5.0},
+    }
+    element = {"length": 5.0, "member_loads": []}
+    ends = frame_internal_end_section_forces(member_force)
+
+    assert ends["i"]["M"] == pytest.approx(20.0)
+    assert ends["j"]["M"] == pytest.approx(5.0)
+    assert section_force_at_x(member_force, element, 0.0)["M"] == pytest.approx(20.0)
+    assert section_force_at_x(member_force, element, 5.0)["M"] == pytest.approx(5.0)
+
+
+def test_simply_supported_midspan_point_load_has_zero_end_moments_and_midspan_peak():
+    data, _masses = load_text_model(ROOT / "inputs" / "examples" / "member_load_point_frame.txt")
+    result = run_static_analysis(data)
+
+    rows = frame_station_results(result, 1, n_stations=5)
+    moments = [row["M"] for row in rows]
+
+    assert moments[0] == pytest.approx(0.0, abs=1.0e-8)
+    assert moments[-1] == pytest.approx(0.0, abs=1.0e-8)
+    assert moments[2] == pytest.approx(25000.0)
+    assert moments[2] == pytest.approx(max(moments))
+
+
+def test_simply_supported_udl_has_zero_end_moments_and_parabolic_shape():
+    data, _masses = load_text_model(ROOT / "inputs" / "examples" / "member_load_udl_frame.txt")
+    result = run_static_analysis(data)
+
+    rows = frame_station_results(result, 1, n_stations=5)
+    moments = [row["M"] for row in rows]
+    second_differences = [
+        moments[i + 2] - 2.0 * moments[i + 1] + moments[i]
+        for i in range(len(moments) - 2)
+    ]
+
+    assert moments[0] == pytest.approx(0.0, abs=1.0e-8)
+    assert moments[-1] == pytest.approx(0.0, abs=1.0e-8)
+    assert moments[2] == pytest.approx(31250.0)
+    assert any(abs(value) > 1.0e-8 for value in second_differences)
 
 
 def test_hermite_deformed_polyline_has_station_coordinates():

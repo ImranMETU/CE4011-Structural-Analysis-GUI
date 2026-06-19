@@ -86,6 +86,27 @@ def test_text_loader_rejects_unknown_keyword():
         parse_text_model("BOGUS 1 2 3")
 
 
+def test_text_loader_parses_units_preset_and_explicit_units():
+    preset_data, _ = parse_text_model("UNITS kN-m-C-tonne")
+    explicit_data, _ = parse_text_model(
+        "UNITS FORCE=kip LENGTH=ft MASS=slug TEMP=F TIME=s ROTATION=rad"
+    )
+
+    assert preset_data["units"]["name"] == "kN-m-C-tonne"
+    assert preset_data["units"]["force"] == "kN"
+    assert preset_data["units_defaulted"] is False
+    assert explicit_data["units"]["force"] == "kip"
+    assert explicit_data["units"]["length"] == "ft"
+    assert explicit_data["units_defaulted"] is False
+
+
+def test_text_loader_uses_default_units_when_line_is_missing():
+    data, _ = parse_text_model("")
+
+    assert data["units"]["name"] == "N-m-C-kg"
+    assert data["units_defaulted"] is True
+
+
 def test_text_loader_parses_thermal_and_settlement_lines():
     data, _mass_mapping = parse_text_model(THERMAL_SETTLEMENT_TEXT_MODEL)
 

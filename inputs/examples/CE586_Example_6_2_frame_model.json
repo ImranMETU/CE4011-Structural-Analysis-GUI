@@ -1,0 +1,79 @@
+{
+  "units": {
+    "name": "kN-m-C-tonne",
+    "force": "kN",
+    "length": "m",
+    "mass": "tonne",
+    "temperature": "C",
+    "time": "s",
+    "rotation": "rad"
+  },
+  "units_defaulted": false,
+  "description": "CE586 Example 6.2 equivalent 2D frame model. Vertical DOFs are restrained at mass nodes so the dynamic DOFs are lateral ux only; rotations are massless and should be statically condensed by the modal solver.",
+  "nodes": [
+    {
+      "id": 1,
+      "x": 0.0,
+      "y": 0.0,
+      "restraints": {
+        "ux": true,
+        "uy": true,
+        "rz": true
+      }
+    },
+    {
+      "id": 2,
+      "x": 0.0,
+      "y": 1.5,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    },
+    {
+      "id": 3,
+      "x": 0.0,
+      "y": 3.0,
+      "restraints": {
+        "ux": false,
+        "uy": true,
+        "rz": false
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "EI_material",
+      "E": 8320.0,
+      "alpha": 0.0
+    }
+  ],
+  "sections": [
+    {
+      "id": "unit_I_section",
+      "A": 1.0,
+      "I": 1.0,
+      "d": 1.0
+    }
+  ],
+  "elements": [
+    {
+      "id": 1,
+      "type": "frame",
+      "node_i": 1,
+      "node_j": 2,
+      "material": "EI_material",
+      "section": "unit_I_section"
+    },
+    {
+      "id": 2,
+      "type": "frame",
+      "node_i": 2,
+      "node_j": 3,
+      "material": "EI_material",
+      "section": "unit_I_section"
+    }
+  ],
+  "nodal_loads": []
+}

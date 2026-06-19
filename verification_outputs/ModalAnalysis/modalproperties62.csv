@@ -1,0 +1,3 @@
+Mode,eigenvalue lambda = omega^2,omega [rad/s],frequency [Hz],period [s],Normalization,Sign convention,Roof phi
+1,1.023237e+02,1.011552e+01,1.609935e+00,6.211432e-01,"roof-normalized, roof ux positive",roof ux positive,1.000000e+00
+2,2.715031e+03,5.210596e+01,8.292921e+00,1.205848e-01,"roof-normalized, roof ux positive",roof ux positive,1.000000e+00

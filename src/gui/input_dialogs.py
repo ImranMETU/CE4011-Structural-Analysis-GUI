@@ -12,11 +12,209 @@ from analysis.mass_assembly import (
     lump_element_distributed_mass_to_nodes,
     merge_mass_mappings,
 )
+from data.material_database import get_material_preset, get_material_preset_names
+from data.section_database import get_section_preset, get_section_preset_names
+from units.unit_system import UnitSystem, get_unit_preset, get_unit_preset_names
+from visualization.diagram_conventions import (
+    ForceDiagramConvention,
+    ftool_force_diagram_convention,
+    internal_force_diagram_convention,
+)
 from .model_builder import ModelBuilder
 
 
 FieldSpec = dict[str, Any]
+PresetSpec = dict[str, Any]
 MEMBER_LOAD_BUTTON_LABELS = ("Add", "Update", "Delete", "Apply", "OK", "Cancel")
+
+
+def open_diagram_conventions_dialog(
+    parent,
+    current: ForceDiagramConvention,
+    on_apply: Callable[[ForceDiagramConvention], None] | None = None,
+) -> None:
+    dialog = tk.Toplevel(parent)
+    dialog.title("Diagram Display Conventions")
+    dialog.transient(parent)
+    dialog.resizable(False, False)
+
+    preset_var = tk.StringVar(value=_diagram_preset_name(current))
+    moment_var = tk.StringVar(value=current.moment_side)
+    shear_var = tk.StringVar(value=current.shear_positive_side)
+    axial_var = tk.StringVar(value=current.axial_positive_side)
+
+    tk.Label(dialog, text="Preset").grid(row=0, column=0, sticky="w", padx=8, pady=5)
+    preset = ttk.Combobox(
+        dialog,
+        textvariable=preset_var,
+        values=["Ftool-style", "Internal sign convention", "Custom"],
+        state="readonly",
+        width=28,
+    )
+    preset.grid(row=0, column=1, sticky="ew", padx=8, pady=5)
+
+    rows = [
+        ("Bending moment display", moment_var, ["tension", "compression"]),
+        ("Positive shear side", shear_var, ["top", "bottom"]),
+        ("Positive axial-force side", axial_var, ["top", "bottom"]),
+    ]
+    combos = []
+    for row, (label, variable, values) in enumerate(rows, start=1):
+        tk.Label(dialog, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=5)
+        combo = ttk.Combobox(dialog, textvariable=variable, values=values, state="readonly", width=28)
+        combo.grid(row=row, column=1, sticky="ew", padx=8, pady=5)
+        combo.bind("<<ComboboxSelected>>", lambda _event=None: preset_var.set("Custom"))
+        combos.append(combo)
+
+    tk.Label(
+        dialog,
+        text="Display convention changes only the plotted side of N/V/M ordinates. Numerical results and tables are unchanged.",
+        foreground="#595959",
+        wraplength=480,
+        justify=tk.LEFT,
+    ).grid(row=4, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 4))
+
+    def apply_preset(_event=None) -> None:
+        if preset_var.get() == "Ftool-style":
+            selected = ftool_force_diagram_convention()
+        elif preset_var.get() == "Internal sign convention":
+            selected = internal_force_diagram_convention()
+        else:
+            return
+        moment_var.set(selected.moment_side)
+        shear_var.set(selected.shear_positive_side)
+        axial_var.set(selected.axial_positive_side)
+
+    preset.bind("<<ComboboxSelected>>", apply_preset)
+
+    def apply(close: bool = False) -> None:
+        name = preset_var.get()
+        if name not in {"Ftool-style", "Internal sign convention"}:
+            name = "Custom"
+        convention = ForceDiagramConvention(
+            convention_name=name,
+            moment_side=moment_var.get(),
+            shear_positive_side=shear_var.get(),
+            axial_positive_side=axial_var.get(),
+        )
+        if on_apply is not None:
+            on_apply(convention)
+        if close:
+            dialog.destroy()
+
+    buttons = tk.Frame(dialog, padx=8, pady=8)
+    buttons.grid(row=5, column=0, columnspan=2, sticky="ew")
+    tk.Button(buttons, text="Apply", command=apply).pack(side=tk.LEFT, padx=3)
+    tk.Button(buttons, text="OK", command=lambda: apply(True)).pack(side=tk.RIGHT, padx=3)
+    tk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=3)
+
+
+def _diagram_preset_name(convention: ForceDiagramConvention) -> str:
+    if convention == ftool_force_diagram_convention():
+        return "Ftool-style"
+    if convention == internal_force_diagram_convention():
+        return "Internal sign convention"
+    return "Custom"
+
+
+def open_model_units_dialog(parent, builder: ModelBuilder, on_apply: Callable[[], None] | None = None) -> None:
+    dialog = tk.Toplevel(parent)
+    dialog.title("Model Units")
+    dialog.transient(parent)
+    dialog.resizable(False, False)
+
+    current = builder.units
+    entries: dict[str, tk.Entry] = {}
+    preset_var = tk.StringVar(value=current.name if current.name in get_unit_preset_names() else "")
+
+    tk.Label(dialog, text="Preset").grid(row=0, column=0, sticky="w", padx=8, pady=5)
+    preset = ttk.Combobox(dialog, textvariable=preset_var, values=get_unit_preset_names(), state="readonly", width=24)
+    preset.grid(row=0, column=1, sticky="ew", padx=8, pady=5)
+
+    fields = [
+        ("force", "Force"),
+        ("length", "Length"),
+        ("mass", "Mass"),
+        ("temperature", "Temperature"),
+        ("time", "Time"),
+        ("rotation", "Rotation"),
+    ]
+    for row, (key, label) in enumerate(fields, start=1):
+        tk.Label(dialog, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=4)
+        entry = tk.Entry(dialog, width=26)
+        entry.insert(0, getattr(current, key))
+        entry.grid(row=row, column=1, sticky="ew", padx=8, pady=4)
+        entries[key] = entry
+
+    tk.Label(
+        dialog,
+        text="This changes unit labels/metadata only. Existing numerical input values are not converted.",
+        foreground="#595959",
+        wraplength=430,
+        justify=tk.LEFT,
+    ).grid(row=len(fields) + 1, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 4))
+
+    def apply_preset(_event=None) -> None:
+        selected = get_unit_preset(preset_var.get())
+        for key, _label in fields:
+            _set_widget_value(entries[key], getattr(selected, key))
+
+    preset.bind("<<ComboboxSelected>>", apply_preset)
+
+    def apply(close: bool = False) -> None:
+        name = preset_var.get().strip()
+        if not name:
+            name = f"{entries['force'].get()}-{entries['length'].get()}-{entries['temperature'].get()}-{entries['mass'].get()}"
+        units = UnitSystem(
+            name=name,
+            force=entries["force"].get().strip(),
+            length=entries["length"].get().strip(),
+            mass=entries["mass"].get().strip(),
+            temperature=entries["temperature"].get().strip(),
+            time=entries["time"].get().strip(),
+            rotation=entries["rotation"].get().strip(),
+        )
+        if not all((units.force, units.length, units.mass, units.temperature, units.time, units.rotation)):
+            messagebox.showerror("Invalid units", "All unit fields are required.", parent=dialog)
+            return
+        builder.set_units(units)
+        if on_apply is not None:
+            on_apply()
+        if close:
+            dialog.destroy()
+
+    buttons = tk.Frame(dialog, padx=8, pady=8)
+    buttons.grid(row=len(fields) + 2, column=0, columnspan=2, sticky="ew")
+    tk.Button(buttons, text="Apply", command=apply).pack(side=tk.LEFT, padx=3)
+    tk.Button(buttons, text="OK", command=lambda: apply(True)).pack(side=tk.RIGHT, padx=3)
+    tk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT, padx=3)
+
+
+def material_preset_to_dialog_values(name: str) -> dict[str, Any]:
+    """Return dialog field values for a built-in material preset."""
+    preset = get_material_preset(name)
+    return {
+        "fields": {
+            "name": preset["name"],
+            "E": _format_preset_number(preset["E"]),
+            "alpha": _format_preset_number(preset["alpha"]),
+        },
+        "notes": _preset_notes(preset, ("density", "notes")),
+    }
+
+
+def section_preset_to_dialog_values(name: str) -> dict[str, Any]:
+    """Return dialog field values for a built-in section preset."""
+    preset = get_section_preset(name)
+    return {
+        "fields": {
+            "name": preset["name"],
+            "A": _format_preset_number(preset["A"]),
+            "I": _format_preset_number(preset["I"]),
+            "d": _format_preset_number(preset["d"]),
+        },
+        "notes": _preset_notes(preset, ("shape", "category", "notes")),
+    }
 
 
 def open_materials_dialog(parent, builder: ModelBuilder, on_change: Callable[[], None] | None = None) -> None:
@@ -34,6 +232,11 @@ def open_materials_dialog(parent, builder: ModelBuilder, on_change: Callable[[],
         lambda key: builder.delete_record("materials", key),
         "name",
         on_change=on_change,
+        preset={
+            "label": "Preset material",
+            "names": get_material_preset_names(),
+            "values_func": material_preset_to_dialog_values,
+        },
     )
 
 
@@ -56,6 +259,11 @@ def open_sections_dialog(parent, builder: ModelBuilder, on_change: Callable[[], 
         lambda key: builder.delete_record("sections", key),
         "name",
         on_change=on_change,
+        preset={
+            "label": "Preset section",
+            "names": get_section_preset_names(),
+            "values_func": section_preset_to_dialog_values,
+        },
     )
 
 
@@ -545,6 +753,20 @@ def _set_widget_value(widget, value: Any) -> None:
         widget.configure(state="disabled")
 
 
+def _format_preset_number(value: Any) -> str:
+    return f"{float(value):.12g}"
+
+
+def _preset_notes(preset: dict[str, Any], keys: tuple[str, ...]) -> str:
+    parts = []
+    for key in keys:
+        value = preset.get(key)
+        if value not in (None, ""):
+            label = key.replace("_", " ")
+            parts.append(f"{label}: {value}")
+    return " | ".join(parts)
+
+
 def _node_record(record: dict[str, Any]) -> dict[str, Any]:
     restraints = record["restraints"]
     return {
@@ -789,6 +1011,7 @@ class _RecordDialog:
         key_field: str,
         on_change: Callable[[], None] | None = None,
         help_text: str | None = None,
+        preset: PresetSpec | None = None,
     ):
         self.records_func = records_func
         self.save_func = save_func
@@ -797,6 +1020,7 @@ class _RecordDialog:
         self.fields = fields
         self.on_change = on_change
         self.entries: dict[str, tk.Entry | ttk.Combobox] = {}
+        self.preset_note_var = tk.StringVar(value="")
 
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(title)
@@ -804,19 +1028,39 @@ class _RecordDialog:
 
         form = tk.Frame(self.dialog, padx=8, pady=8)
         form.pack(side=tk.TOP, fill=tk.X)
+        field_label_row = 0
+        field_value_row = 1
+        if preset:
+            tk.Label(form, text=preset.get("label", "Preset")).grid(row=0, column=0, sticky="w", pady=(0, 4))
+            preset_combo = ttk.Combobox(form, values=preset.get("names", []), state="readonly", width=28)
+            preset_combo.grid(
+                row=0,
+                column=1,
+                columnspan=max(1, len(fields) - 1),
+                sticky="ew",
+                padx=3,
+                pady=(0, 4),
+            )
+            preset_combo.bind("<<ComboboxSelected>>", lambda _event=None: self._apply_preset(preset_combo, preset))
+            field_label_row = 1
+            field_value_row = 2
+
         for col, spec in enumerate(fields):
-            tk.Label(form, text=spec["label"]).grid(row=0, column=col, sticky="w")
+            tk.Label(form, text=spec["label"]).grid(row=field_label_row, column=col, sticky="w")
             if "choices" in spec:
                 widget = ttk.Combobox(form, values=spec["choices"], width=12)
             else:
                 widget = tk.Entry(form, width=12)
             widget.insert(0, spec.get("default", ""))
-            widget.grid(row=1, column=col, padx=3, pady=3)
+            widget.grid(row=field_value_row, column=col, padx=3, pady=3)
             self.entries[spec["key"]] = widget
 
-        if help_text:
-            tk.Label(form, text=help_text, foreground="#595959", wraplength=760, justify=tk.LEFT).grid(
-                row=2,
+        note_text = help_text or ""
+        if note_text:
+            self.preset_note_var.set(note_text)
+        if help_text or preset:
+            tk.Label(form, textvariable=self.preset_note_var, foreground="#595959", wraplength=760, justify=tk.LEFT).grid(
+                row=field_value_row + 1,
                 column=0,
                 columnspan=max(1, len(fields)),
                 sticky="w",
@@ -839,6 +1083,17 @@ class _RecordDialog:
         tk.Button(buttons, text="Cancel", command=self.dialog.destroy).pack(side=tk.RIGHT, padx=3)
 
         self._refresh()
+
+    def _apply_preset(self, combo: ttk.Combobox, preset: PresetSpec) -> None:
+        try:
+            values = preset["values_func"](combo.get())
+        except Exception as exc:
+            messagebox.showerror("Preset error", str(exc), parent=self.dialog)
+            return
+        for key, value in values.get("fields", {}).items():
+            if key in self.entries:
+                _set_widget_value(self.entries[key], value)
+        self.preset_note_var.set(values.get("notes", ""))
 
     def _values(self) -> dict[str, Any]:
         return {key: widget.get().strip() for key, widget in self.entries.items()}

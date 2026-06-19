@@ -55,12 +55,14 @@ def compute_floor_displacements(
     method: str = "mean",
 ) -> dict[str, Any]:
     """Compute representative static displacement per floor."""
-    return _compute_floor_displacements(
+    result = _compute_floor_displacements(
         static_result.get("nodes", {}),
         static_result.get("displacements", {}),
         direction=direction,
         method=method,
     )
+    result["units"] = static_result.get("units")
+    return result
 
 
 def compute_story_drift(
@@ -70,7 +72,9 @@ def compute_story_drift(
 ) -> dict[str, Any]:
     """Compute static interstory drift and drift ratio."""
     floors = compute_floor_displacements(static_result, direction=direction, method=method)
-    return _story_drift_from_floors(floors)
+    result = _story_drift_from_floors(floors)
+    result["units"] = static_result.get("units")
+    return result
 
 
 def compute_roof_displacement(
@@ -79,12 +83,14 @@ def compute_roof_displacement(
     method: str = "max_abs",
 ) -> dict[str, Any]:
     """Compute representative static roof displacement."""
-    return _compute_roof_displacement(
+    result = _compute_roof_displacement(
         static_result.get("nodes", {}),
         static_result.get("displacements", {}),
         direction=direction,
         method=method,
     )
+    result["units"] = static_result.get("units")
+    return result
 
 
 def compute_modal_floor_displacements(

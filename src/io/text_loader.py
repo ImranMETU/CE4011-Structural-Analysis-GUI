@@ -10,6 +10,7 @@ from analysis.mass_assembly import (
     lump_element_distributed_mass_to_nodes,
     merge_mass_mappings,
 )
+from units.unit_system import UnitSystem, default_unit_system, get_unit_preset
 
 
 def load_text_model(path: str | Path) -> tuple[dict[str, Any], dict[int, dict[str, float]]]:
@@ -21,6 +22,8 @@ def load_text_model(path: str | Path) -> tuple[dict[str, Any], dict[int, dict[st
 def parse_text_model(text: str) -> tuple[dict[str, Any], dict[int, dict[str, float]]]:
     """Parse a simple engineering text input deck."""
     data: dict[str, Any] = {
+        "units": default_unit_system().to_dict(),
+        "units_defaulted": True,
         "nodes": [],
         "materials": [],
         "sections": [],
@@ -38,7 +41,10 @@ def parse_text_model(text: str) -> tuple[dict[str, Any], dict[int, dict[str, flo
         keyword = tokens[0].upper()
         args = tokens[1:]
 
-        if keyword == "MATERIAL":
+        if keyword == "UNITS":
+            data["units"] = _parse_units(args, line_no).to_dict()
+            data["units_defaulted"] = False
+        elif keyword == "MATERIAL":
             data["materials"].append(_parse_material(args, line_no))
         elif keyword == "SECTION":
             data["sections"].append(_parse_section(args, line_no))
@@ -75,6 +81,25 @@ def parse_text_model(text: str) -> tuple[dict[str, Any], dict[int, dict[str, flo
             raise ValueError(f"Line {line_no}: unknown keyword {tokens[0]!r}.")
 
     return data, mass_mapping
+
+
+def _parse_units(args: list[str], line_no: int) -> UnitSystem:
+    _require_len(args, 1, line_no, "UNITS preset-name or UNITS FORCE=N LENGTH=m MASS=kg TEMP=C TIME=s ROTATION=rad")
+    if len(args) == 1 and "=" not in args[0]:
+        try:
+            return get_unit_preset(args[0])
+        except KeyError as exc:
+            raise ValueError(f"Line {line_no}: {exc.args[0]}") from exc
+    props = _key_values(args, line_no)
+    default = default_unit_system()
+    force = props.get("FORCE", default.force)
+    length = props.get("LENGTH", default.length)
+    mass = props.get("MASS", default.mass)
+    temperature = props.get("TEMP", props.get("TEMPERATURE", default.temperature))
+    time = props.get("TIME", default.time)
+    rotation = props.get("ROTATION", default.rotation)
+    name = props.get("NAME", f"{force}-{length}-{temperature}-{mass}")
+    return UnitSystem(name, force, length, mass, temperature, time, rotation)
 
 
 def _parse_material(args: list[str], line_no: int) -> dict[str, Any]:

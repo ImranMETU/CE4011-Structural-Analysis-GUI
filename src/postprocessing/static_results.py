@@ -12,12 +12,16 @@ from typing import Any
 from model.frame_element import FrameElement
 from model.structure import Structure
 from model.truss_element import TrussElement
+from units.unit_system import default_unit_system, normalize_unit_system
 
 
 def run_static_analysis(data: dict[str, Any], tol: float = 1e-8, max_iter: int = 2000) -> dict[str, Any]:
     """Build, solve, and package a static analysis case from input data."""
     structure = Structure.from_dict(data)
-    return collect_static_results(structure, solve=True, tol=tol, max_iter=max_iter)
+    result = collect_static_results(structure, solve=True, tol=tol, max_iter=max_iter)
+    result["units"] = normalize_unit_system(data.get("units")).to_dict()
+    result["units_defaulted"] = bool(data.get("units_defaulted", "units" not in data))
+    return result
 
 
 def collect_static_results(
@@ -44,6 +48,8 @@ def collect_static_results(
 
     displacement_vector = structure.full_displacement_vector()
     return {
+        "units": default_unit_system().to_dict(),
+        "units_defaulted": True,
         "displacement_vector": displacement_vector,
         "displacements": _node_displacements(structure, displacement_vector),
         "reactions": structure.compute_reactions(),

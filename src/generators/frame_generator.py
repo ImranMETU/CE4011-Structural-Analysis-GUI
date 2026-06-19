@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+from units.unit_system import default_unit_system
+
 
 def generate_frame_model(
     *,
@@ -33,6 +35,8 @@ def generate_frame_model(
         raise ValueError("Only brace_pattern='single_diagonal' is supported in this first generator.")
 
     data: dict[str, Any] = {
+        "units": default_unit_system().to_dict(),
+        "units_defaulted": False,
         "nodes": [],
         "materials": [
             {"id": "frame_material", "E": float(E_frame), "alpha": 0.0},
