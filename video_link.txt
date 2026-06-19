@@ -1,3 +1,4 @@
-Google Drive: https://drive.google.com/drive/u/3/folders/1LKxH3PTDTnRRohcugyNJnS7usN5ejap3
+Google Drive: https://drive.google.com/drive/folders/1GHzenS_Ye5sUdnL7k2YRcEG69VkaLbzD
 Youtube: https://youtu.be/5S6H1mQz4zo
 Installer: https://drive.google.com/file/d/153He7D_wZ2FF9whGVxrezIJhlzXqVhss
+GitHub Repository: https://github.com/ImranMETU/CE4011-Structural-Analysis-GUI
