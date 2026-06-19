@@ -57,6 +57,12 @@ Static outputs include:
 - station-force tables
 - story drift and roof displacement outputs for frame examples
 
+- ## Example Output: Cantilever Beam
+
+The figure below shows the bending moment diagram for the cantilever verification case.
+
+![Cantilever bending moment diagram](benchmarks/Cantilever/Project_BMD.png)
+
 ### Modal analysis
 
 The modal module supports lumped modal mass assembly and massless-DOF static condensation. This is useful for frame models where translational DOFs may have mass but rotational or vertical DOFs may be massless.
@@ -72,6 +78,12 @@ Modal outputs include:
 - modal mass ratios
 - cumulative modal mass ratios
 - massive/massless DOF classification data
+
+- ## Example Output: 5-storey Unbraced Frame
+
+The figure below shows the first mode of excitation for a 5-storey frame.
+
+![Cantilever bending moment diagram](benchmarks/5story/Screenshot%202026-06-18%20015531.png)
 
 ### Linear modal dynamic utilities
 
@@ -91,7 +103,7 @@ The project includes automated tests and verification examples, including:
 
 - cantilever beam static verification
 - simply supported beam static verification
-- CE586 modal benchmark examples
+- modal benchmark examples
 - five-story generated frame validation
 - Autodesk Robot modal comparison
 - ten-story braced/unbraced generated-frame comparison
