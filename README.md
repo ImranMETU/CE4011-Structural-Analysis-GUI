@@ -41,6 +41,8 @@ Supported modeling components include:
 - generated multi-story frame examples
 - unit metadata and display labels
 
+![OOP Class Structure](UML/ClassUML.png)
+
 ### Static analysis
 
 The static solver uses the Direct Stiffness Method for 2D frame-truss systems. It assembles the global stiffness matrix, applies boundary conditions, solves for active nodal displacements, and recovers reactions and member forces.
